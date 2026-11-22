@@ -7,15 +7,19 @@ if [[ -t 1 ]] && tput colors &>/dev/null && [[ $(tput colors) -ge 8 ]]; then
   C_BOLD=$'\033[1m'
   C_DIM=$'\033[2m'
   C_CYAN=$'\033[36m'
+  C_BRIGHT_CYAN=$'\033[96m'
   C_GREEN=$'\033[32m'
+  C_BRIGHT_GREEN=$'\033[92m'
   C_YELLOW=$'\033[33m'
+  C_BRIGHT_YELLOW=$'\033[93m'
   C_RED=$'\033[31m'
+  C_BRIGHT_RED=$'\033[91m'
   C_WHITE=$'\033[97m'
   C_GRAY=$'\033[90m'
-  C_MAGENTA=$'\033[35m'
 else
-  C_RESET='' C_BOLD='' C_DIM='' C_CYAN='' C_GREEN=''
-  C_YELLOW='' C_RED='' C_WHITE='' C_GRAY='' C_MAGENTA=''
+  C_RESET='' C_BOLD='' C_DIM='' C_CYAN='' C_BRIGHT_CYAN='' C_GREEN=''
+  C_BRIGHT_GREEN='' C_YELLOW='' C_BRIGHT_YELLOW='' C_RED='' C_BRIGHT_RED=''
+  C_WHITE='' C_GRAY=''
 fi
 
 SYM_RUN="◉"   # active
@@ -72,8 +76,11 @@ activity() {
 print_statusbar() {
   local mode="${1:-cyber}" state="${2:-READY}" profile="${3:-$NC_PROFILE_NAME}"
   local w; w=$(cols)
+  local ws_display="${HERE:-$PWD}"
+  ws_display="${ws_display/#$HOME/~}"
+  
   local left=" NEOCYBER · $mode · $state"
-  local right="PROFILE: $profile · Ctrl+C stop "
+  local right="PROFILE: $profile · WS: $ws_display "
   local pad=$(( w - ${#left} - ${#right} ))
   [[ $pad -lt 0 ]] && pad=0
   printf '%s%s%s%*s%s%s\n' \
@@ -82,29 +89,95 @@ print_statusbar() {
     "$right" "$C_RESET"
 }
 
-# Real-time Diff Viewer
-render_diff() {
-  local file_path="$1"
-  local old_file="$2"
-  local new_file="$3"
+# Clean Markdown Renderer (Strips raw ## hashes, removes ``` backticks, styles sections)
+clean_render_markdown() {
+  local text="$1"
+  local in_code=0 fence_lang=""
 
-  box_top "FILE DIFF · $file_path"
-  if [[ -f "$old_file" && -f "$new_file" ]]; then
-    while IFS= read -r line; do
-      if [[ "$line" =~ ^\+ ]]; then
-        box_line "$C_GREEN$line$C_RESET"
-      elif [[ "$line" =~ ^\- ]]; then
-        box_line "$C_RED$line$C_RESET"
-      elif [[ "$line" =~ ^@@ ]]; then
-        box_line "$C_CYAN$line$C_RESET"
+  while IFS= read -r line; do
+    # Code fence toggle
+    if [[ "$line" =~ ^\`\`\`(.*)$ ]]; then
+      if [[ $in_code -eq 0 ]]; then
+        in_code=1
+        fence_lang="${BASH_REMATCH[1]}"
+        printf '\n  %s┌─ %s%s%s %s┐%s\n' "$C_GRAY" "$C_BOLD" "${fence_lang:-command}" "$C_RESET$C_GRAY" "──────────────────────────────────────────────" "$C_RESET"
       else
-        box_line "$C_DIM$line$C_RESET"
+        in_code=0
+        printf '  %s└─────────────────────────────────────────────────┘%s\n\n' "$C_GRAY" "$C_RESET"
       fi
-    done < <(diff -u "$old_file" "$new_file" | tail -n +3)
-  else
-    box_line "$C_YELLOW(New or deleted file: $file_path)$C_RESET"
+      continue
+    fi
+
+    if [[ $in_code -eq 1 ]]; then
+      printf '  %s│%s  %s%s%s\n' "$C_GRAY" "$C_RESET" "$C_BRIGHT_GREEN" "$line" "$C_RESET"
+      continue
+    fi
+
+    # Headings: Strip ## and convert to clean upper banner
+    if [[ "$line" =~ ^#{1,4}[[:space:]](.+)$ ]]; then
+      local h_title="${BASH_REMATCH[1]}"
+      printf '\n%s%s◆ %s%s\n' "$C_BRIGHT_CYAN" "$C_BOLD" "${h_title^^}" "$C_RESET"
+      continue
+    fi
+
+    # Bullet points: clean dot
+    if [[ "$line" =~ ^[-*][[:space:]](.+)$ ]]; then
+      printf '  %s·%s %s\n' "$C_CYAN" "$C_RESET" "${BASH_REMATCH[1]}"
+      continue
+    fi
+
+    if [[ -z "$line" ]]; then
+      printf '\n'
+      continue
+    fi
+
+    # Remove inline backticks and style with yellow
+    local rendered="$line"
+    rendered="${rendered//\`/$C_YELLOW}"
+    printf '  %s%s\n' "$rendered" "$C_RESET"
+  done <<< "$text"
+}
+
+# Tool Execution Result Box
+render_tool_result_box() {
+  local cmd="$1"
+  local exit_code="$2"
+  local duration="$3"
+  local output="$4"
+
+  local w; w=$(cols)
+  local box_w=$((w - 4))
+  [[ $box_w -gt 86 ]] && box_w=86
+
+  local border_col="$C_CYAN"
+  local status_col="$C_BRIGHT_GREEN"
+  local status_text="SUCCESS · Exit $exit_code · ${duration}s"
+  if [[ "$exit_code" -ne 0 ]]; then
+    border_col="$C_BRIGHT_RED"
+    status_col="$C_BRIGHT_RED"
+    status_text="FAILED · Exit $exit_code · ${duration}s"
   fi
-  box_bottom
+
+  printf '\n  %s╭── %sSECURITY TOOL OUTPUT%s%s ──%*s╮%s\n' \
+    "$border_col" "$C_BOLD" "$C_RESET" "$border_col" $((box_w - 27)) '' "$C_RESET" | tr ' ' '─'
+  printf '  %s│%s  %sCommand :%s %s%s%s\n' "$border_col" "$C_RESET" "$C_GRAY" "$C_RESET" "$C_BOLD$C_WHITE" "$cmd" "$C_RESET"
+  printf '  %s│%s  %sStatus  :%s %s%s%s\n' "$border_col" "$C_RESET" "$C_GRAY" "$C_RESET" "$status_col" "$status_text" "$C_RESET"
+  printf '  %s├%*s┤%s\n' "$border_col" $((box_w - 2)) '' "$C_RESET" | tr ' ' '─'
+
+  if [[ -z "$output" ]]; then
+    printf '  %s│%s  %s(No output generated)%s\n' "$border_col" "$C_RESET" "$C_DIM" "$C_RESET"
+  else
+    local count=0
+    while IFS= read -r l && [[ $count -lt 15 ]]; do
+      local line_disp="${l:0:$((box_w - 6))}"
+      printf '  %s│%s  %s%s%s\n' "$border_col" "$C_RESET" "$C_BRIGHT_GREEN" "$line_disp" "$C_RESET"
+      (( count++ ))
+    done <<< "$output"
+    if [[ $count -ge 15 ]]; then
+      printf '  %s│%s  %s... [truncated for context efficiency]%s\n' "$border_col" "$C_RESET" "$C_GRAY" "$C_RESET"
+    fi
+  fi
+  printf '  %s╰%*s╯%s\n\n' "$border_col" $((box_w - 2)) '' "$C_RESET" | tr ' ' '─'
 }
 
 # Structured Security Findings Display
