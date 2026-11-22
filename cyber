@@ -170,17 +170,15 @@ run_streaming() {
 
 run_interactive() {
   local mode="$1" session_flag="${2:-}"
-  local oc_args=("mini" "--agent" "$mode" "--model" "$NC_MODEL_ID")
-  [[ -n "$session_flag" ]] && oc_args+=("--session" "$session_flag")
 
   printf '\n'
   hr '─'
-  print_statusbar "$mode" "INTERACTIVE TUI" "$NC_PROFILE_NAME"
+  print_statusbar "$mode" "STREAMING TUI" "$NC_PROFILE_NAME"
   hr '─'
-  printf '%s  Ctrl+C interrupt · Shift+Tab switch mode · Ctrl+N new session%s\n\n' "$C_DIM" "$C_RESET"
+  printf '%s  Real-time word-by-word streaming · Live security tool execution · Ctrl+C to quit%s\n\n' "$C_DIM" "$C_RESET"
 
-  cd "$HERE"
-  exec "$OPENCODE" "${oc_args[@]}"
+  local agent_file="$HERE/.opencode/agents/${mode}.md"
+  "$HERE/lib/engine.py" "$NC_OLLAMA_NAME" "$agent_file" "--interactive" "$mode"
 }
 
 # ─── argument parsing ─────────────────────────────────────────────────────────
