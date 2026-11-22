@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import re
+import uuid
 from typing import AsyncGenerator, Callable, Dict, List, Optional, Tuple
 
 from neocyber.engine.ollama import OllamaClient
@@ -11,37 +12,30 @@ from neocyber.models.message import Message, Role, ToolCall
 from neocyber.models.profile import ModelProfile
 
 
-CYBER_SYSTEM_PROMPT = """You are CYBER — an elite offensive/defensive cybersecurity operator.
-Scope: Authorized targets only (CTFs, lab targets, owned infrastructure, audits).
-Mindset: Respond with precise, actionable commands. No theory walls or padding.
+CYBER_SYSTEM_PROMPT = """You are CYBER — an intelligent AI cybersecurity copilot and expert security operator.
 
-Format every response as:
-## Objective
-[One clear line defining current task]
-
-## Action
-[Explain action and execute bash/tools inside ```bash code blocks]
-
-## Result
-[Summary of output or findings]
-
-## Next
-[Immediate next step in the attack/audit chain]
+Behavior Guidelines:
+1. Converse naturally, intelligently, and concisely.
+   - When the user greets you (e.g. "hey", "hello", "hi") or asks a casual question, respond conversationally, politely, and helpfully like a human security professional. Never run unrequested commands or pretend to scan the user when they just say hello!
+   - When given a security task, code audit, recon, or technical problem, provide a clear, concise, and professional answer.
+2. Shell Commands & Tools:
+   - If a shell command or tool is needed to complete the user's task, output the exact command inside a ```bash code block.
+   - Explain what the command does in 1-2 concise sentences before the code block.
+   - Never output unnecessary commands unless they directly answer what the user asked.
+3. Clean Formatting:
+   - Use natural, standard Markdown (paragraphs, bullet points, code blocks).
+   - Do NOT use repetitive rigid template headers like '## Objective', '## Action', '## Result', '## Next' on every message. Just speak and explain normally.
+4. Security & Safety:
+   - Refuse unauthorized destructive attacks against systems outside the authorized scope.
 """
 
-PLAN_SYSTEM_PROMPT = """You are PLAN — an elite read-only cybersecurity planner.
-Scope: Threat modeling, attack surface mapping, exploit chains.
-Rule: You NEVER execute commands or modify files. Read and plan only.
+PLAN_SYSTEM_PROMPT = """You are PLAN — an elite cybersecurity architect and threat modeler.
 
-Format every response as:
-## Objective
-[Planning goal]
-
-## Threat Model / Attack Chain
-[Structured steps: Recon -> Enum -> Exploit -> Escalation]
-
-## Action Plan for CYBER
-[Exact commands and payloads for the operator to run]
+Behavior Guidelines:
+1. Converse naturally, intelligently, and concisely.
+2. Focus on architecture analysis, attack surface mapping, threat modeling, and defensive engineering.
+3. You are read-only: discuss strategies and write proposed commands for the user to review, but never execute them.
+4. Use clean standard Markdown without rigid repetitive headers.
 """
 
 
@@ -118,24 +112,24 @@ class AgentRunner:
 
         tool_calls: List[ToolCall] = []
 
-        # If agent is CYBER, extract commands and execute them
+        # If agent is CYBER, extract commands and execute them with globally unique tool IDs
         if agent_name == "cyber" and self.is_running:
             commands = self.extract_commands(full_response)
-            for idx, cmd in enumerate(commands):
-                tool_id = f"tool-{idx+1}"
+            for cmd in commands:
+                tool_uid = f"tool-{uuid.uuid4().hex[:8]}"
                 tc = ToolCall(
-                    id=tool_id,
+                    id=tool_uid,
                     name="bash",
                     arguments={"command": cmd},
                     status="running",
                 )
                 tool_calls.append(tc)
                 if on_tool_start:
-                    on_tool_start(tool_id, cmd)
+                    on_tool_start(tool_uid, cmd)
 
                 def _chunk_cb(chunk: str):
                     if on_tool_chunk:
-                        on_tool_chunk(tool_id, chunk)
+                        on_tool_chunk(tool_uid, chunk)
 
                 code, output, duration = self.tools.execute_shell(cmd, on_chunk=_chunk_cb)
                 tc.status = "completed" if code == 0 else "failed"
@@ -144,7 +138,7 @@ class AgentRunner:
                 tc.exit_code = code
 
                 if on_tool_complete:
-                    on_tool_complete(tool_id, code, output, duration)
+                    on_tool_complete(tool_uid, code, output, duration)
 
         self.is_running = False
         return full_response, tool_calls
