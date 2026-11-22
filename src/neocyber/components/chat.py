@@ -1,6 +1,7 @@
 """Chat conversation area handling message rendering and streaming viewports."""
 from __future__ import annotations
 
+import uuid
 from typing import Optional
 
 from rich.text import Text
@@ -27,8 +28,8 @@ class ChatArea(VerticalScroll):
     }
     .welcome-banner {
         width: 100%;
-        margin: 1 0;
-        padding: 1;
+        margin: 0 0 1 0;
+        padding: 0 1;
         background: #18181b;
         border: round #27272a;
     }
@@ -38,25 +39,23 @@ class ChatArea(VerticalScroll):
         super().__init__(id=id)
         self.workspace_name = workspace_name
         self._msg_counter = 0
+        self._tool_counter = 0
 
     def compose(self) -> ComposeResult:
         welcome_text = Text.assemble(
             ("NEOCYBER", "bold #22d3ee"),
-            (" · Cybersecurity AI Harness for Local Models\n", "bold #f4f4f5"),
-            ("Workspace: ", "dim #71717a"),
-            (f"{self.workspace_name}\n", "bold #a1a1aa"),
+            (f"  {self.workspace_name}\n", "dim #71717a"),
             ("Modes: ", "dim #71717a"),
             ("cyber", "bold #38bdf8"),
-            (" (full operator) · ", "dim #71717a"),
+            (" · ", "dim #52525b"),
             ("plan", "bold #f59e0b"),
-            (" (threat modeler)\n", "dim #71717a"),
-            ("Type a prompt or ", "dim #71717a"),
-            ("!", "#38bdf8"),
-            (" for direct shell command. Press ", "dim #71717a"),
+            ("  |  ", "dim #52525b"),
             ("Ctrl+P", "bold #22d3ee"),
-            (" for commands, ", "dim #71717a"),
+            (" commands  ", "dim #71717a"),
             ("Tab", "bold #f59e0b"),
-            (" to toggle mode.", "dim #71717a"),
+            (" switch mode  ", "dim #71717a"),
+            ("!", "bold #38bdf8"),
+            (" shell prefix", "dim #71717a"),
         )
         yield Static(welcome_text, classes="welcome-banner", id="welcome-msg")
 
@@ -65,7 +64,7 @@ class ChatArea(VerticalScroll):
         msg = MessageView(
             role=Role.USER,
             initial_content=content,
-            id=f"msg-{self._msg_counter}",
+            id=f"msg-{self._msg_counter}-{uuid.uuid4().hex[:4]}",
         )
         self.mount(msg)
         self.scroll_end(animate=False)
@@ -77,17 +76,19 @@ class ChatArea(VerticalScroll):
             role=Role.ASSISTANT,
             initial_content="",
             agent=agent,
-            id=f"msg-{self._msg_counter}",
+            id=f"msg-{self._msg_counter}-{uuid.uuid4().hex[:4]}",
         )
         self.mount(msg)
         self.scroll_end(animate=False)
         return msg
 
     def add_tool_card(self, tool_id: str, name: str, description: str) -> ToolExecutionCard:
+        self._tool_counter += 1
         card = ToolExecutionCard(
             tool_id=tool_id,
             name=name,
             description=description,
+            id=f"toolcard-{self._tool_counter}-{uuid.uuid4().hex[:4]}",
         )
         self.mount(card)
         self.scroll_end(animate=False)
