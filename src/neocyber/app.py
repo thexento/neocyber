@@ -111,6 +111,8 @@ class NeoCyberApp(App[None]):
         Binding("ctrl+m", "open_model_selector", "Models", show=True),
         Binding("f2", "open_model_selector", "Models", show=False),
         Binding("ctrl+y", "copy_last_response", "Copy Response", show=True),
+        Binding("pageup", "scroll_chat_pageup", "Scroll Up", show=False),
+        Binding("pagedown", "scroll_chat_pagedown", "Scroll Down", show=False),
         Binding("escape", "cancel_action", "Cancel / Stop", show=True),
         Binding("ctrl+c", "quit_app", "Quit", show=True),
         Binding("question_mark", "open_help", "Help", show=False),
@@ -169,13 +171,14 @@ class NeoCyberApp(App[None]):
 
     def on_mount(self) -> None:
         self.query_one(InputArea).focus_input()
-        if hasattr(self, "_driver") and self._driver:
-            try:
-                self._driver._disable_mouse_support()
-            except Exception:
-                pass
 
     # ── Actions ───────────────────────────────────────────────────────────────
+
+    def action_scroll_chat_pageup(self) -> None:
+        self.query_one(ChatArea).scroll_page_up(animate=False)
+
+    def action_scroll_chat_pagedown(self) -> None:
+        self.query_one(ChatArea).scroll_page_down(animate=False)
 
     def action_open_command_palette(self) -> None:
         def _handle_choice(choice: str | None) -> None:
@@ -239,6 +242,18 @@ class NeoCyberApp(App[None]):
         self.exit()
 
     # ── Event Handlers ────────────────────────────────────────────────────────
+
+    @on(InputArea.ScrollChat)
+    def handle_scroll_chat(self, event: InputArea.ScrollChat) -> None:
+        chat = self.query_one(ChatArea)
+        if event.direction == "pageup":
+            chat.scroll_page_up(animate=False)
+        elif event.direction == "pagedown":
+            chat.scroll_page_down(animate=False)
+        elif event.direction == "up":
+            chat.scroll_up(animate=False)
+        elif event.direction == "down":
+            chat.scroll_down(animate=False)
 
     @on(InputArea.TabPressed)
     def handle_tab_pressed(self) -> None:
@@ -418,8 +433,8 @@ class NeoCyberApp(App[None]):
                     combined_results = "\n\n".join(tool_results)
                     current_prompt = (
                         f"[System: Command Output from your execution]:\n{combined_results}\n\n"
-                        "Review these results. If additional commands are needed to complete the objective, output them in ```bash. "
-                        "Otherwise, provide the final answer and summary."
+                        "Analyze these real output results. If additional commands are needed to complete the user's objective, output the next bash command. "
+                        "Otherwise, explain the findings and provide the final answer."
                     )
                 else:
                     break
