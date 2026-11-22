@@ -1,6 +1,7 @@
 """Tool execution display card showing command/tool details and live outputs."""
 from __future__ import annotations
 
+import re
 from typing import Optional
 
 from rich.text import Text
@@ -18,19 +19,19 @@ class ToolExecutionCard(Widget):
     ToolExecutionCard {
         width: 100%;
         height: auto;
-        margin: 1 0;
+        margin: 0 0 1 0;
         background: #141416;
-        border: round #3f3f46;
+        border: round #27272a;
         padding: 0 1;
     }
     ToolExecutionCard.status-running {
-        border: round #22d3ee;
+        border: round #0284c7;
     }
     ToolExecutionCard.status-completed {
-        border: round #10b981;
+        border: round #059669;
     }
     ToolExecutionCard.status-failed {
-        border: round #ef4444;
+        border: round #dc2626;
     }
 
     .tool-header-row {
@@ -47,13 +48,22 @@ class ToolExecutionCard(Widget):
         width: auto;
         text-style: bold;
     }
+    .tool-status-badge.running {
+        color: #38bdf8;
+    }
+    .tool-status-badge.completed {
+        color: #34d399;
+    }
+    .tool-status-badge.failed {
+        color: #f87171;
+    }
     .tool-output-scroll {
         color: #d4d4d8;
         background: #0d0d0f;
         padding: 0 1;
-        margin-top: 1;
+        margin-top: 0;
         height: auto;
-        max-height: 14;
+        max-height: 12;
         overflow-y: auto;
     }
     """
@@ -68,7 +78,8 @@ class ToolExecutionCard(Widget):
         description: str,
         id: Optional[str] = None,
     ) -> None:
-        super().__init__(id=id or f"card-{tool_id}")
+        safe_id = re.sub(r"[^a-zA-Z0-9_-]", "-", id or f"card-{tool_id}")
+        super().__init__(id=safe_id)
         self.tool_id = tool_id
         self.tool_name = name
         self.tool_description = description
@@ -78,7 +89,7 @@ class ToolExecutionCard(Widget):
     def compose(self) -> ComposeResult:
         with Horizontal(classes="tool-header-row"):
             yield Static(
-                f"▶ {self.tool_name.upper()}  {self.tool_description}",
+                f"▶ {self.tool_name}  {self.tool_description}",
                 classes="tool-title-static",
                 id=f"{self.id}-title",
             )
@@ -117,8 +128,18 @@ class ToolExecutionCard(Widget):
             self.add_class("status-failed")
             badge.update(f"[ ✗ FAILED · Exit {exit_code} · {duration}s ]")
 
-        # Format output
-        if not output.strip():
+        # Check for missing command error (e.g. nmap: command not found)
+        display_text = output.strip()
+        if exit_code == 127 or "command not found" in display_text.lower():
+            # Try to identify missing command
+            missing = self.tool_description.split()[0] if self.tool_description else "tool"
+            hint = (
+                f"\n\n[dim yellow]💡 Tool '{missing}' is not installed on this system.[/dim yellow]\n"
+                f"[dim]To install it, run: [/dim][bold cyan]sudo pacman -S {missing}[/bold cyan] [dim]or[/dim] [bold cyan]sudo apt install {missing}[/bold cyan]"
+            )
+            display_text += hint
+
+        if not display_text:
             output_widget.update(Text("(No output generated)", style="dim italic"))
         else:
-            output_widget.update(output)
+            output_widget.update(display_text)
