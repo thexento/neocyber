@@ -110,7 +110,7 @@ class NeoCyberApp(App[None]):
                 return
             self._handle_command(choice)
 
-        self.push_screen(CommandPalette(), _handle_choice)
+        self.push_screen(CommandPalette(self.profiles), _handle_choice)
 
     def action_toggle_agent(self) -> None:
         new_mode = "plan" if self.agent_mode == "cyber" else "cyber"
@@ -166,28 +166,37 @@ class NeoCyberApp(App[None]):
         self._run_turn(raw_text)
 
     def _handle_command(self, cmd: str) -> None:
-        clean = cmd.strip().lower()
-        if clean in ("/cyber", "cyber"):
+        clean = cmd.strip()
+        parts = clean.split(maxsplit=1)
+        base = parts[0].lower()
+        arg = parts[1].strip() if len(parts) > 1 else ""
+
+        if base in ("/cyber", "cyber"):
             self.agent_mode = "cyber"
             self.query_one(StatusBar).agent_mode = "cyber"
             self.notify("Switched to Cyber Operator Mode")
-        elif clean in ("/plan", "plan"):
+        elif base in ("/plan", "plan"):
             self.agent_mode = "plan"
             self.query_one(StatusBar).agent_mode = "plan"
             self.notify("Switched to Plan Mode (Read-Only Threat Modeler)")
-        elif clean in ("/models", "/model", "models"):
-            local_models = self.ollama.list_local_models()
+        elif base in ("/models", "/model", "models", "model"):
+            if arg:
+                self.active_profile_name = arg
+                self.query_one(StatusBar).model_name = arg
+                self.notify(f"Active model profile set to: {arg}")
+            else:
+                local_models = self.ollama.list_local_models()
 
-            def _on_model_selected(selected: str | None) -> None:
-                if selected:
-                    self.active_profile_name = selected
-                    self.query_one(StatusBar).model_name = selected
-                    self.notify(f"Active model profile set to: {selected}")
+                def _on_model_selected(selected: str | None) -> None:
+                    if selected:
+                        self.active_profile_name = selected
+                        self.query_one(StatusBar).model_name = selected
+                        self.notify(f"Active model profile set to: {selected}")
 
-            self.push_screen(
-                ModelSelector(self.profiles, self.active_profile_name, local_models),
-                _on_model_selected,
-            )
+                self.push_screen(
+                    ModelSelector(self.profiles, self.active_profile_name, local_models),
+                    _on_model_selected,
+                )
         elif clean in ("/findings", "findings"):
             findings_file = os.path.join(self.workspace_dir, "reports", "findings.json")
             self.push_screen(FindingsOverlay(findings_file))
