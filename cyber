@@ -1,0 +1,309 @@
+#!/usr/bin/env bash
+# neocyber — cybersecurity AI harness · small local model optimization & bash TUI
+# usage: ./cyber                          interactive mode picker + live TUI
+#        ./cyber cyber                    launch operator mode directly
+#        ./cyber plan                     launch planner mode directly
+#        ./cyber cyber --run "task"       stream task live with event & tool display
+#        ./cyber --profile llama3.2:3b    select model profile
+#        ./cyber --findings               view recorded security findings
+#        ./cyber --sessions               list past sessions
+set -euo pipefail
+
+HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+export HERE
+OPENCODE="${OPENCODE_BIN:-/home/xento7z/.opencode/bin/opencode}"
+[[ ! -x "$OPENCODE" ]] && OPENCODE="opencode"
+
+# Load modules
+source "$HERE/lib/tui.sh"
+source "$HERE/lib/profiles.sh"
+source "$HERE/lib/validator.sh"
+source "$HERE/lib/context.sh"
+source "$HERE/lib/tools.sh"
+source "$HERE/lib/orchestrator.sh"
+
+# Default profile initialization
+load_profile "${NC_PROFILE:-}"
+
+# ─── banner ───────────────────────────────────────────────────────────────────
+banner() {
+  printf '\n'
+  printf '%s%s' "$C_CYAN" "$C_BOLD"
+  cat <<'EOF'
+   ██████╗██╗   ██╗██████╗ ███████╗██████╗
+  ██╔════╝╚██╗ ██╔╝██╔══██╗██╔════╝██╔══██╗
+  ██║      ╚████╔╝ ██████╔╝█████╗  ██████╔╝
+  ██║       ╚██╔╝  ██╔══██╗██╔══╝  ██╔══██╗
+  ╚██████╗   ██║   ██████╔╝███████╗██║  ██║
+   ╚═════╝   ╚═╝   ╚═════╝ ╚══════╝╚═╝  ╚═╝
+EOF
+  printf '%s' "$C_RESET"
+  local subtitle="  cybersecurity harness · model: $NC_PROFILE_NAME ($NC_PARAM_SIZE) · context: ${NC_CONTEXT_BUDGET}t"
+  printf '%s%s%s\n' "$C_DIM" "$subtitle" "$C_RESET"
+  hr '─'
+  printf '\n'
+}
+
+# ─── mode picker ──────────────────────────────────────────────────────────────
+pick_mode() {
+  printf '  %s[1] cyber%s   %s— full operator: shell · tools · read/write · live streaming%s\n' \
+    "$C_CYAN$C_BOLD" "$C_RESET" "$C_DIM" "$C_RESET"
+  printf '  %s[2] plan%s    %s— read-only planner: threat model · attack chain · no exec%s\n' \
+    "$C_CYAN$C_BOLD" "$C_RESET" "$C_DIM" "$C_RESET"
+  printf '  %s[3] findings%s%s— view identified security findings dashboard%s\n' \
+    "$C_YELLOW$C_BOLD" "$C_RESET" "$C_DIM" "$C_RESET"
+  printf '  %s[q] quit%s\n\n' "$C_GRAY" "$C_RESET"
+  printf '  %sselect ›%s ' "$C_CYAN" "$C_RESET"
+  local choice
+  IFS= read -r choice
+  case "$choice" in
+    1|c|cyber) mode=cyber ;;
+    2|p|plan)  mode=plan ;;
+    3|f|findings) render_findings; exit 0 ;;
+    q|quit|'') exit 0 ;;
+    *) printf '%s  unknown choice: %s%s\n' "$C_RED" "$choice" "$C_RESET" >&2; exit 1 ;;
+  esac
+}
+
+# ─── markdown renderer (terminal-native) ─────────────────────────────────────
+_render_markdown() {
+  local text="$1"
+  local in_code=0 fence_lang=""
+
+  while IFS= read -r line; do
+    if [[ "$line" =~ ^\`\`\`(.*)$ ]]; then
+      if [[ $in_code -eq 0 ]]; then
+        in_code=1
+        fence_lang="${BASH_REMATCH[1]}"
+        printf '%s┌─ %s ──%s\n' "$C_GRAY" "${fence_lang:-code}" "$C_RESET"
+      else
+        in_code=0
+        printf '%s└───%s\n' "$C_GRAY" "$C_RESET"
+      fi
+      continue
+    fi
+
+    if [[ $in_code -eq 1 ]]; then
+      printf '%s│%s %s\n' "$C_GRAY" "$C_RESET" "$line"
+      continue
+    fi
+
+    if [[ "$line" =~ ^##[[:space:]](.+)$ ]]; then
+      printf '\n%s%s%s\n' "$C_CYAN$C_BOLD" "${BASH_REMATCH[1]}" "$C_RESET"
+      continue
+    fi
+    if [[ "$line" =~ ^#[[:space:]](.+)$ ]]; then
+      printf '\n%s%s%s\n' "$C_WHITE$C_BOLD" "${BASH_REMATCH[1]}" "$C_RESET"
+      continue
+    fi
+
+    if [[ "$line" =~ ^[-*][[:space:]](.+)$ ]]; then
+      printf '  %s%s%s %s\n' "$C_CYAN" "$SYM_STEP" "$C_RESET" "${BASH_REMATCH[1]}"
+      continue
+    fi
+
+    if [[ -z "$line" ]]; then
+      printf '\n'
+      continue
+    fi
+
+    local rendered="$line"
+    rendered="${rendered//\`/$(printf '%s' "$C_YELLOW")}"
+    printf '%s\n' "$rendered$C_RESET"
+  done <<< "$text"
+}
+
+_render_tool_start() {
+  local name="$1" input="$2"
+  printf '\n'
+  box_top "SECURITY TOOL · $name"
+
+  local cmd; cmd=$(printf '%s' "$input" | jq -r '.command // .cmd // empty' 2>/dev/null) || true
+  if [[ -n "${cmd:-}" ]]; then
+    box_line "$(printf '%s$ %s%s' "$C_GREEN" "$C_RESET" "$cmd")"
+  else
+    while IFS='=' read -r k v; do
+      box_line "$(printf '%s%-12s%s %s' "$C_GRAY" "$k" "$C_RESET" "$v")"
+    done < <(printf '%s' "$input" | jq -r 'to_entries[] | "\(.key)=\(.value)"' 2>/dev/null || true)
+  fi
+
+  box_line "$C_CYAN$SYM_RUN Running...$C_RESET"
+  box_bottom
+}
+
+_render_tool_result() {
+  local name="$1" result="$2"
+  printf '\n'
+  box_top "EVIDENCE / RESULT · $name"
+  local count=0
+  while IFS= read -r l && [[ $count -lt 15 ]]; do
+    box_line "$C_DIM$l$C_RESET"
+    (( count++ ))
+  done <<< "$result"
+  if [[ $count -ge 15 ]]; then
+    box_line "${C_GRAY}… [truncated for context efficiency]${C_RESET}"
+  fi
+  box_line "$(printf '%s %s Completed · Exit code: 0%s' "$C_GREEN" "$SYM_OK" "$C_RESET")"
+  box_bottom
+  printf '\n'
+}
+
+# ─── streaming run mode ───────────────────────────────────────────────────────
+run_streaming() {
+  local mode="$1" prompt="$2" session_flag="${3:-}"
+
+  printf '\n'
+  hr '─'
+  print_statusbar "$mode" "RUNNING" "$NC_PROFILE_NAME"
+  hr '─'
+  printf '\n'
+
+  activity "$SYM_RUN" "$C_CYAN" "Initializing security assessment ($NC_PROFILE_NAME)..."
+
+  # Build opencode command
+  local oc_args=("run" "--format" "json" "--agent" "$mode" "--model" "$NC_MODEL_ID")
+  [[ -n "$session_flag" ]] && oc_args+=("--session" "$session_flag")
+  oc_args+=("$prompt")
+
+  local exit_code=0
+  local event_fifo; event_fifo=$(mktemp -u /tmp/nc_events_XXXXXXXX)
+  mkfifo "$event_fifo"
+  trap 'rm -f "$event_fifo"' EXIT INT TERM
+
+  ( cd "$HERE" && "$OPENCODE" "${oc_args[@]}" 2>/dev/null > "$event_fifo" ) &
+  local oc_pid=$!
+
+  trap 'kill "$oc_pid" 2>/dev/null; rm -f "$event_fifo"; printf "\n%s%s Assessment interrupted by user.%s\n" "$C_YELLOW" "$SYM_ERR" "$C_RESET"; exit 130' INT
+
+  while IFS= read -r event_line; do
+    [[ -z "$event_line" ]] && continue
+    local etype; etype=$(printf '%s' "$event_line" | jq -r '.type // ""' 2>/dev/null) || continue
+
+    case "$etype" in
+      step_start)
+        activity "$SYM_RUN" "$C_CYAN" "Analyzing security task context..."
+        ;;
+      text)
+        local text start_ms end_ms elapsed_ms
+        text=$(printf '%s' "$event_line" | jq -r '.part.text // ""')
+        start_ms=$(printf '%s' "$event_line" | jq -r '.part.time.start // 0')
+        end_ms=$(printf '%s' "$event_line" | jq -r '.part.time.end // 0')
+        elapsed_ms=$(( end_ms - start_ms ))
+        activity "$SYM_OK" "$C_GREEN" "Model response received (${elapsed_ms}ms)"
+        printf '\n'
+        _render_markdown "$text"
+        printf '\n'
+        ;;
+      tool_use)
+        local tname tinput
+        tname=$(printf '%s' "$event_line" | jq -r '.part.tool // .part.toolName // "tool"' 2>/dev/null)
+        tinput=$(printf '%s' "$event_line" | jq -r '.part.input // {}' 2>/dev/null)
+        activity "$SYM_TOOL" "$C_YELLOW" "Executing security tool: $tname"
+        _render_tool_start "$tname" "$tinput"
+        ;;
+      tool_result)
+        local tname tresult
+        tname=$(printf '%s' "$event_line" | jq -r '.part.tool // .part.toolName // "tool"' 2>/dev/null)
+        tresult=$(printf '%s' "$event_line" | jq -r '.part.output // .part.result // ""' 2>/dev/null)
+        _render_tool_result "$tname" "$tresult"
+        activity "$SYM_OK" "$C_GREEN" "Tool completed: $tname"
+        ;;
+      file_read)
+        local fpath; fpath=$(printf '%s' "$event_line" | jq -r '.part.path // ""' 2>/dev/null)
+        activity "$SYM_FILE" "$C_CYAN" "Inspecting $fpath"
+        ;;
+      file_write|file_create)
+        local fpath; fpath=$(printf '%s' "$event_line" | jq -r '.part.path // ""' 2>/dev/null)
+        activity "$SYM_FILE" "$C_YELLOW" "Modifying $fpath"
+        ;;
+      step_finish)
+        local reason tokens_in tokens_out
+        reason=$(printf '%s' "$event_line" | jq -r '.part.reason // "stop"' 2>/dev/null)
+        tokens_in=$(printf '%s' "$event_line" | jq -r '.part.tokens.input // 0' 2>/dev/null)
+        tokens_out=$(printf '%s' "$event_line" | jq -r '.part.tokens.output // 0' 2>/dev/null)
+        activity "$SYM_OK" "$C_GREEN" "Step finished · tokens: ${tokens_in} in / ${tokens_out} out"
+        ;;
+    esac
+  done < "$event_fifo"
+
+  wait "$oc_pid" 2>/dev/null && exit_code=0 || exit_code=$?
+  rm -f "$event_fifo"
+  trap - EXIT INT TERM
+
+  printf '\n'
+  hr '─'
+  if [[ $exit_code -eq 0 ]]; then
+    print_statusbar "$mode" "COMPLETED" "$NC_PROFILE_NAME"
+  else
+    print_statusbar "$mode" "ERROR ($exit_code)" "$NC_PROFILE_NAME"
+  fi
+  hr '─'
+  printf '\n'
+}
+
+run_interactive() {
+  local mode="$1" session_flag="${2:-}"
+  local oc_args=("mini" "--agent" "$mode" "--model" "$NC_MODEL_ID")
+  [[ -n "$session_flag" ]] && oc_args+=("--session" "$session_flag")
+
+  printf '\n'
+  hr '─'
+  print_statusbar "$mode" "INTERACTIVE TUI" "$NC_PROFILE_NAME"
+  hr '─'
+  printf '%s  Ctrl+C interrupt · Shift+Tab switch mode · Ctrl+N new session%s\n\n' "$C_DIM" "$C_RESET"
+
+  cd "$HERE"
+  exec "$OPENCODE" "${oc_args[@]}"
+}
+
+# ─── argument parsing ─────────────────────────────────────────────────────────
+mode="" run="" session_id="" list_flag=0 findings_flag=0
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    cyber|plan)     mode="$1"; shift ;;
+    --run)          shift; run="${1:-}"; shift ;;
+    --profile|-p)   shift; load_profile "${1:-}"; shift ;;
+    --profiles)     echo "Available Model Profiles:"; list_profiles; exit 0 ;;
+    --findings|-f)  findings_flag=1; shift ;;
+    --session|-s)   shift; session_id="${1:-}"; shift ;;
+    --sessions)     list_flag=1; shift ;;
+    -h|--help)
+      cat <<EOF
+NeoCyber — Cybersecurity AI Harness
+Usage:
+  ./cyber [cyber|plan]                    Interactive TUI
+  ./cyber [cyber|plan] --run "task"       Live streaming execution
+  ./cyber --profile <profile_name>        Select model profile
+  ./cyber --profiles                      List supported profiles
+  ./cyber --findings                      Display findings dashboard
+  ./cyber --sessions                      List sessions
+EOF
+      exit 0
+      ;;
+    *)
+      printf '%s  unknown argument: %s%s\n' "$C_RED" "$1" "$C_RESET" >&2
+      exit 1
+      ;;
+  esac
+done
+
+banner
+
+if [[ $findings_flag -eq 1 ]]; then
+  render_findings
+  exit 0
+fi
+
+if [[ $list_flag -eq 1 ]]; then
+  cd "$HERE" && "$OPENCODE" session list
+  exit 0
+fi
+
+[[ -n "$mode" ]] || pick_mode
+
+if [[ -n "$run" ]]; then
+  run_streaming "$mode" "$run" "$session_id"
+else
+  run_interactive "$mode" "$session_id"
+fi
