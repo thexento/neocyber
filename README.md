@@ -1,73 +1,121 @@
-# neocyber
+# NeoCyber
 
-A cybersecurity-focused AI harness around local language models
-(`Qwen2.5-Coder-7B-Instruct-abliterated`, `Llama 3.2 3B`, `Gemma 2 2B`) served by Ollama.
+> Elite Cybersecurity AI Agent Harness with an authentic OpenCode-grade Terminal User Interface (TUI), built specifically for small local models (1B–8B) served by Ollama.
 
-Features true **word-by-word real-time streaming**, an authentic terminal wrapper design, in-place tool execution inside styled panels, and clean Markdown rendering without raw hashes or backticks.
-
----
-
-## Modes
-
-| Mode | Tools | Description |
-|---|---|---|
-| `cyber` | shell, read/write, grep/glob, web | Full security operator for recon, exploitation, source audit, reports |
-| `plan` | read/grep/glob/web only | Read-only planner for threat models and structured attack chains |
+NeoCyber recreates the visual language, interaction patterns, and responsiveness of **OpenCode** — including full-screen terminal rendering, real-time token streaming without raw markdown clutter, styled tool execution cards, color-coded unified diffs, and an interactive command palette.
 
 ---
 
-## Quickstart
+## ⚡ Key Highlights
 
-Run the interactive launcher:
+- **OpenCode TUI Experience**: Built with Textual (Python's Bubble Tea equivalent) featuring deep dark surfaces, crisp typography, responsive layout adaptation, and zero terminal flickering.
+- **Genuine Live Streaming**: Token-by-token streaming from local Ollama endpoints with incremental markdown rendering and auto-scroll pinning.
+- **In-Place Tool Execution**: Shell commands, recon scanners, and scripts run inside styled cards with live status badges (`[RUNNING]`, `[SUCCESS]`, `[FAILED]`), duration timers, and output viewports.
+- **Color-Coded Diffs**: File modifications generate unified diffs with green additions (`+`) and red deletions (`-`).
+- **Cybersecurity Operator Focus**:
+  - `cyber`: Full operator with shell execution, tool chaining, file read/write/edit, and vulnerability verification.
+  - `plan`: Read-only threat modeler for attack surface mapping and exploit chains without execution.
+- **Small Model Optimized**: Context normalization for 1B–8B models (Qwen2.5-Coder 7B, Llama 3.2 3B, Gemma 2 2B) automatically truncates large scan outputs and archives raw logs to `reports/evidence/`.
+- **Scope & Guardrails**: Prevents destructive commands and restricts scans to authorized targets.
+- **Direct Shell Triggers**: Prefix any prompt with `!` to immediately run shell commands in an execution card without model inference (e.g. `!uname -a`, `!nmap localhost`).
+
+---
+
+## 🚀 Quickstart
+
+Launch the interactive TUI:
 ```bash
 ./cyber
 ```
-Select `[1] cyber` for operator mode or `[2] plan` for planner mode.
 
-Or launch directly:
+Launch directly into a specific agent persona:
 ```bash
-./cyber cyber      # Operator mode interactive REPL
-./cyber plan       # Planner mode interactive REPL
+./cyber cyber      # Operator mode
+./cyber plan       # Threat modeler mode
 ```
 
-### Direct Task Streaming (`--run`)
-Stream execution directly for a specific security task:
+### Direct Headless Execution (`--run`)
+Stream execution directly in your terminal for single tasks:
 ```bash
-./cyber cyber --run "Check system info with uname -a and uptime"
-./cyber plan  --run "Audit current workspace for sensitive configs"
+./cyber --run "Check system info with uname -a and uptime"
+./cyber plan --run "Audit workspace files for sensitive configs"
 ```
 
 ---
 
-## Model Profiles
+## ⌨️ Keyboard Shortcuts & Controls
 
-Small local models (1B–8B) require tailored context budgets and parameters. NeoCyber includes built-in profiles:
+| Shortcut | Action | Description |
+|---|---|---|
+| `Ctrl+P` | **Command Palette** | Search and trigger commands (`/cyber`, `/plan`, `/models`, `/findings`, `/clear`, `/help`, `/quit`) |
+| `Tab` | **Switch Agent** | Toggle between **CYBER** (operator) and **PLAN** (planner) |
+| `Ctrl+X` then `M` | **Model Selector** | Browse local Ollama models and switch active model profile |
+| `F2` | **Cycle Models** | Quickly cycle through configured model profiles |
+| `Escape` | **Cancel / Stop** | Stop ongoing model generation or running tool execution |
+| `Enter` | **Submit Prompt** | Send message to agent (`Shift+Enter` for multi-line) |
+| `Up` / `Down` | **History** | Navigate previous prompt history at top/bottom of input |
+| `?` | **Help Overlay** | View complete quick reference modal |
+| `Ctrl+C` | **Exit** | Gracefully quit NeoCyber |
 
+---
+
+## 🎯 Special Commands & Prefixes
+
+Type directly in the prompt input:
+
+- **`!<command>`**: Run direct shell command immediately.
+  ```text
+  !ip a
+  !nmap -sT 127.0.0.1
+  !cat /etc/os-release
+  ```
+- **`/cyber`**: Switch to Operator mode.
+- **`/plan`**: Switch to Planner mode.
+- **`/models`**: Open model picker dialog.
+- **`/findings`**: Open security findings dashboard.
+- **`/clear`**: Clear conversation transcript.
+- **`/help`**: Show help modal.
+- **`/quit`**: Exit NeoCyber.
+
+---
+
+## 🤖 Supported Local Models & Profiles
+
+Configured in `config/profiles.json`:
+
+| Profile | Parameter Size | Context Window | Default For |
+|---|---|---|---|
+| `qwen2.5-coder:7b` | 7B | 16,384 tokens | Default Operator (high tool accuracy) |
+| `llama3.2:3b` | 3B | 8,192 tokens | Fast lightweight local operator |
+| `gemma2:2b` | 2B | 8,192 tokens | Ultra-lightweight local model |
+
+List all profiles:
 ```bash
 ./cyber --profiles
 ```
 
-Switch active profile:
+Switch profile from CLI:
 ```bash
-./cyber --profile qwen2.5-coder:7b
 ./cyber --profile llama3.2:3b
-./cyber --profile gemma2:2b
 ```
 
 ---
 
-## Security Findings Dashboard
+## 🛡️ Security Findings & Evidence
 
-Inspect recorded vulnerabilities and verification evidence:
+Recorded findings are stored in `reports/findings.json` and raw scan outputs are saved in `reports/evidence/`.
+
+Inspect findings via CLI:
 ```bash
 ./cyber --findings
 ```
+Or use the `/findings` command inside the interactive TUI.
 
 ---
 
-## Terminal UI Features
+## 🧪 Running Tests
 
-- **Iconic Cyan ASCII Banner & Status Line**: Always displays the active agent, profile, parameters, and current workspace (`~/xento/test/neocyber`).
-- **Clean Stream Rendering**: Automatically formats raw `##` headings into cyan section headers (`◆ OBJECTIVE`, `◆ ACTION`, `◆ RESULT`, `◆ NEXT`).
-- **Live Tool Execution**: When the agent issues a command, it displays the command execution in real-time inside a styled security box with duration and exit codes.
-- **Context Optimization**: Large scan results (e.g. `nmap`, `curl`, directory scans) are saved to `reports/evidence/` and summarized to preserve the small model's limited context window.
+Run the comprehensive unit and integration test suite:
+```bash
+.venv/bin/pytest tests/
+```
