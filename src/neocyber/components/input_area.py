@@ -12,7 +12,7 @@ from textual.widgets import TextArea
 
 
 class PromptTextArea(TextArea):
-    """Custom TextArea that intercepts Enter for submission and Shift+Enter for newlines."""
+    """Custom TextArea that intercepts Enter for submission, Shift+Enter for newlines, and PageUp/PageDown for chat scrolling."""
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
@@ -37,7 +37,6 @@ class PromptTextArea(TextArea):
                 self.prompt_history.append(val)
                 self.prompt_history_index = -1
                 self.text = ""
-                # Dispatch Submitted message through parent InputArea
                 self.post_message(InputArea.Submitted(val))
             return
 
@@ -46,6 +45,31 @@ class PromptTextArea(TextArea):
             event.stop()
             event.prevent_default()
             self.post_message(InputArea.TabPressed())
+            return
+
+        # PageUp / PageDown / Ctrl+Up / Ctrl+Down -> Scroll the chat viewport!
+        if event.key == "pageup":
+            event.stop()
+            event.prevent_default()
+            self.post_message(InputArea.ScrollChat("pageup"))
+            return
+
+        if event.key == "pagedown":
+            event.stop()
+            event.prevent_default()
+            self.post_message(InputArea.ScrollChat("pagedown"))
+            return
+
+        if event.key in ("ctrl+up", "ctrl+k"):
+            event.stop()
+            event.prevent_default()
+            self.post_message(InputArea.ScrollChat("up"))
+            return
+
+        if event.key in ("ctrl+down", "ctrl+j") and self.text == "":
+            event.stop()
+            event.prevent_default()
+            self.post_message(InputArea.ScrollChat("down"))
             return
 
         # Up arrow at the very top line cycles history backwards
@@ -88,7 +112,7 @@ class InputArea(Widget):
         height: auto;
         min-height: 3;
         max-height: 8;
-        background: #141416;
+        background: #121214;
         padding: 0 1;
         margin-bottom: 0;
     }
@@ -123,6 +147,13 @@ class InputArea(Widget):
 
     class TabPressed(TextualMessage):
         """Dispatched when Tab is pressed to cycle agent modes."""
+
+    class ScrollChat(TextualMessage):
+        """Dispatched when PageUp/PageDown is pressed to scroll chat history."""
+
+        def __init__(self, direction: str) -> None:
+            self.direction = direction
+            super().__init__()
 
     def compose(self) -> ComposeResult:
         with Container(classes="input-frame"):
