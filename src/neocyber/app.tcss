@@ -1,4 +1,4 @@
-/* NeoCyber TUI — OpenCode-grade Terminal Styling */
+/* NeoCyber TUI — Modern Terminal Styling */
 
 Screen {
     background: #121214;
@@ -38,48 +38,42 @@ Screen {
     scrollbar-color: #27272a #121214;
 }
 
-/* ── Messages & Spacing ── */
+/* ── Messages & Spacing (Antigravity-style clean stream) ── */
 MessageView {
     width: 100%;
     height: auto;
     margin: 0 0 1 0;
     padding: 0;
+    layout: vertical;
 }
 
-.msg-header-row {
-    height: 1;
+.msg-user-row {
+    height: auto;
     width: 100%;
-    layout: horizontal;
+    margin-top: 0;
     margin-bottom: 0;
     padding: 0;
 }
 
-.msg-body {
-    width: 100%;
+.msg-assistant-row {
     height: auto;
-    padding-left: 1;
-    margin: 0;
+    width: 100%;
+    margin-top: 0;
+    padding-left: 2;
 }
 
-.user-block {
-    border-left: solid #22d3ee;
-    background: #18181b;
-    padding: 0 1;
-    margin: 0;
+.assistant-author-badge {
+    color: #38bdf8;
+    text-style: bold;
+    margin-bottom: 0;
+    height: 1;
 }
 
-.assistant-block {
-    border-left: solid #38bdf8;
-    background: #141416;
-    padding: 0 1;
-    margin: 0;
-}
-
-.plan-block {
-    border-left: solid #f59e0b;
-    background: #161517;
-    padding: 0 1;
-    margin: 0;
+.plan-author-badge {
+    color: #f59e0b;
+    text-style: bold;
+    margin-bottom: 0;
+    height: 1;
 }
 
 /* ── Tool Execution Card ── */
