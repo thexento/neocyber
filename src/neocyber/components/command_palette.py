@@ -1,7 +1,7 @@
 """Command palette modal dialog for searching and launching commands."""
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from rich.text import Text
 from textual import events
@@ -19,7 +19,7 @@ class CommandPalette(ModalScreen[str | None]):
     DEFAULT_CSS = """
     CommandPalette {
         align: center middle;
-        background: rgba(0, 0, 0, 0.7);
+        background: rgba(0, 0, 0, 0.75);
     }
     #palette-container {
         width: 72;
@@ -63,7 +63,7 @@ class CommandPalette(ModalScreen[str | None]):
     def __init__(self, profiles: Optional[Dict[str, Any]] = None) -> None:
         super().__init__()
         self.commands: List[Tuple[str, str, str, str]] = [
-            ("/models", "Switch Model Profile", "Browse & switch local Ollama models", "model switch ollama provider change"),
+            ("/models", "⚙ Switch Model...", "Browse & select active Ollama model", "settings switch model ollama provider change"),
             ("/cyber", "Switch to Cyber Operator Mode", "Full operator: shell, tools, read/write", "agent mode cyber execute operator"),
             ("/plan", "Switch to Plan Mode", "Threat modeler & attack chain planner (read-only)", "agent mode plan planner threat"),
             ("/findings", "Security Findings Dashboard", "Inspect discovered vulnerabilities and evidence", "findings vulns security evidence report"),
@@ -71,12 +71,12 @@ class CommandPalette(ModalScreen[str | None]):
             ("/help", "Keyboard Shortcuts & Help", "View complete reference of keys and features", "help shortcuts docs info"),
             ("/quit", "Exit NeoCyber", "Close terminal session", "quit exit close stop"),
         ]
-        # Dynamically add configured model profiles
+        # Include all locally discovered Ollama models directly in list
         if profiles:
-            for pname in profiles.keys():
+            for pname, pdata in profiles.items():
                 self.commands.insert(
                     1,
-                    (f"/model {pname}", f"Switch to Model: {pname}", "Quickly switch active LLM", f"model switch {pname} ollama"),
+                    (f"/model {pname}", f"Model: {pname}", f"Switch active LLM ({getattr(pdata, 'param_size', 'Local')})", f"model switch {pname} ollama settings"),
                 )
 
         self._current_filtered: List[Tuple[str, str, str, str]] = list(self.commands)
@@ -84,7 +84,7 @@ class CommandPalette(ModalScreen[str | None]):
     def compose(self) -> ComposeResult:
         with Vertical(id="palette-container"):
             yield Static("❯ COMMAND PALETTE & SETTINGS", id="palette-title")
-            yield Input(placeholder="Type command (e.g. 'models', 'cyber', 'plan')...", id="palette-input")
+            yield Input(placeholder="Type command (e.g. 'models', 'settings', 'cyber')...", id="palette-input")
             yield OptionList(id="palette-list")
             yield Static("Enter: Select · Up/Down: Navigate · Esc: Close", id="palette-hint")
 
@@ -98,7 +98,7 @@ class CommandPalette(ModalScreen[str | None]):
         opt_list.clear_options()
         for cmd, title, desc, _ in items:
             label = Text.assemble(
-                (f"{cmd:<18}", "bold #22d3ee"),
+                (f"{cmd:<20}", "bold #22d3ee"),
                 (f"{title} ", "bold #f4f4f5"),
                 (f"— {desc}", "dim #71717a"),
             )
