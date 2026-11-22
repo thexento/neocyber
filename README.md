@@ -1,96 +1,73 @@
 # neocyber
 
-A cybersecurity-focused AI harness around a **local** model
-(`Qwen2.5-Coder-7B-Instruct-abliterated`, Q4_K_M) served by Ollama and
-OpenCode. Features a **real-time streaming TUI** with live event display.
+A cybersecurity-focused AI harness around local language models
+(`Qwen2.5-Coder-7B-Instruct-abliterated`, `Llama 3.2 3B`, `Gemma 2 2B`) served by Ollama.
+
+Features true **word-by-word real-time streaming**, an authentic terminal wrapper design, in-place tool execution inside styled panels, and clean Markdown rendering without raw hashes or backticks.
+
+---
 
 ## Modes
 
-| Mode | Tools | Use |
-|------|-------|-----|
-| `cyber` | shell, read/write, grep/glob, web | recon, exploitation, analysis, reports |
-| `plan`  | read/grep/glob/web only | scope mapping, attack chains, no execution |
+| Mode | Tools | Description |
+|---|---|---|
+| `cyber` | shell, read/write, grep/glob, web | Full security operator for recon, exploitation, source audit, reports |
+| `plan` | read/grep/glob/web only | Read-only planner for threat models and structured attack chains |
 
-Both modes deny `subagent` and `skill` tools to keep the 7B model focused and
-prompt size minimal.
+---
 
-## Run
+## Quickstart
+
+Run the interactive launcher:
+```bash
+./cyber
+```
+Select `[1] cyber` for operator mode or `[2] plan` for planner mode.
+
+Or launch directly:
+```bash
+./cyber cyber      # Operator mode interactive REPL
+./cyber plan       # Planner mode interactive REPL
+```
+
+### Direct Task Streaming (`--run`)
+Stream execution directly for a specific security task:
+```bash
+./cyber cyber --run "Check system info with uname -a and uptime"
+./cyber plan  --run "Audit current workspace for sensitive configs"
+```
+
+---
+
+## Model Profiles
+
+Small local models (1B–8B) require tailored context budgets and parameters. NeoCyber includes built-in profiles:
 
 ```bash
-./cyber                           # mode picker → interactive TUI (live streaming)
-./cyber cyber                     # jump to operator mode TUI
-./cyber plan                      # jump to planner mode TUI
-./cyber cyber --run "task..."     # non-interactive: stream events + response live
-./cyber plan  --run "audit..."    # non-interactive planner run
-./cyber --sessions                # list previous sessions
-./cyber cyber --session ID        # continue a previous session
+./cyber --profiles
 ```
 
-### Non-interactive streaming (--run)
-
-`--run` mode uses `opencode run --format json` which emits **NDJSON events** as
-they happen. The `cyber` launcher renders them live:
-
-```
-20:45:59 ◉  Initializing security assessment...
-20:46:02 ◉  Analyzing request...
-20:46:04 ▶  Executing tool: bash
-╭─ TOOL · bash ──────────────────────────────────────────────────────────────────╮
-│ $ nmap -sV 127.0.0.1
-│ ● Running...
-╰────────────────────────────────────────────────────────────────────────────────╯
-╭─ RESULT · bash ────────────────────────────────────────────────────────────────╮
-│ Starting Nmap...
-│ ✓ Exit code: 0
-╰────────────────────────────────────────────────────────────────────────────────╯
-20:46:12 ✓  Tool complete: bash
-20:46:14 ✓  Response complete · 2300ms
-
-## Objective
-...
-```
-
-### Interactive TUI (no --run)
-
-Hands off directly to `opencode mini` — the native OpenCode TUI where you can
-type tasks, see tools execute in real time, and click tool calls to expand them.
-
-## GPU setup (required for speed)
-
-Without GPU offload, Ollama runs on CPU (~8 tok/s).
-
+Switch active profile:
 ```bash
-sudo pacman -S ollama-cuda
-sudo mkdir -p /etc/systemd/system/ollama.service.d
-sudo tee /etc/systemd/system/ollama.service.d/override.conf <<'EOF'
-[Service]
-Environment="OLLAMA_CONTEXT_LENGTH=16384"
-Environment="OLLAMA_KEEP_ALIVE=30m"
-EOF
-sudo systemctl daemon-reload && sudo systemctl restart ollama
-ollama ps   # PROCESSOR should show partial GPU offload
+./cyber --profile qwen2.5-coder:7b
+./cyber --profile llama3.2:3b
+./cyber --profile gemma2:2b
 ```
 
-`opencode.jsonc` `limit.context` must match `OLLAMA_CONTEXT_LENGTH`. On the
-RTX 4050 (6 GB), 16384 context offloads ~18/29 layers to GPU.
+---
 
-## Files
+## Security Findings Dashboard
 
-```
-cyber                        launcher + streaming TUI
-opencode.jsonc               model alias ollama/cyber + limits
-.opencode/agents/cyber.md    elite operator agent prompt
-.opencode/agents/plan.md     read-only planner agent prompt
+Inspect recorded vulnerabilities and verification evidence:
+```bash
+./cyber --findings
 ```
 
-## Safety
+---
 
-`cyber` auto-approves shell commands — deliberate for local lab work.
-To require confirmation before each shell command:
+## Terminal UI Features
 
-```yaml
-# .opencode/agents/cyber.md
-  - action: shell
-    resource: "*"
-    effect: ask   # was: allow
-```
+- **Iconic Cyan ASCII Banner & Status Line**: Always displays the active agent, profile, parameters, and current workspace (`~/xento/test/neocyber`).
+- **Clean Stream Rendering**: Automatically formats raw `##` headings into cyan section headers (`◆ OBJECTIVE`, `◆ ACTION`, `◆ RESULT`, `◆ NEXT`).
+- **Live Tool Execution**: When the agent issues a command, it displays the command execution in real-time inside a styled security box with duration and exit codes.
+- **Context Optimization**: Large scan results (e.g. `nmap`, `curl`, directory scans) are saved to `reports/evidence/` and summarized to preserve the small model's limited context window.
