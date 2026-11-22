@@ -52,6 +52,21 @@ class SecurityValidator:
                 return True
         return False
 
+    @staticmethod
+    def is_sensitive_command(cmd: str) -> bool:
+        """Check if command requires explicit user confirmation (sudo or destructive)."""
+        stripped = cmd.strip()
+        # Sudo or root elevation
+        if re.search(r"(?:^|[;&|\s])sudo(?:\s|$)|(?:^|[;&|\s])doas(?:\s|$)|(?:^|[;&|\s])su(?:\s|$)", stripped):
+            return True
+        # Destructive file/disk commands
+        if re.search(r"rm\s+-(?:r|f|rf|fr)\s+|mkfs|dd\s+if=|fdisk|parted", stripped):
+            return True
+        # Dangerous system control
+        if re.search(r"(?:shutdown|reboot|poweroff|init\s+0|systemctl\s+(?:stop|disable|poweroff))", stripped):
+            return True
+        return False
+
     def validate_command(self, cmd: str) -> Tuple[bool, Optional[str]]:
         # Destructive system commands
         if re.search(r"rm\s+-(r|f|rf|fr)\s+/(?:\s|$)|mkfs|dd\s+if=|:()\s*{\s*:|:&\s*};\s*:", cmd):
