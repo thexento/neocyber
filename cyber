@@ -1,23 +1,148 @@
 #!/usr/bin/env bash
-# neocyber — OpenCode-Cloned Real-Time Streaming Cybersecurity Harness
+# neocyber — Cybersecurity AI Harness & Native Bash TUI Wrapper
+# Features:
+# - Iconic NeoCyber cyan ASCII banner & terminal status line
+# - Real-time word-by-word streaming without raw markdown clutter
+# - Live in-place security command execution inside clean boxes
+# - In-app profile switching (--profile) and workspace status
+# - Security findings dashboard (--findings)
+# - Interactive REPL & direct task streaming (--run)
 set -euo pipefail
 
 HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 export HERE
+OPENCODE="${OPENCODE_BIN:-/home/xento7z/.opencode/bin/opencode}"
+[[ ! -x "$OPENCODE" ]] && OPENCODE="opencode"
 
-mode="cyber"
-run=""
+# Load modules
+source "$HERE/lib/tui.sh"
+source "$HERE/lib/profiles.sh"
+source "$HERE/lib/validator.sh"
+source "$HERE/lib/context.sh"
+source "$HERE/lib/tools.sh"
+source "$HERE/lib/orchestrator.sh"
+
+# Default profile initialization
+load_profile "${NC_PROFILE:-}"
+
+banner() {
+  printf '\n'
+  printf '%s%s' "$C_CYAN" "$C_BOLD"
+  cat <<'EOF'
+   ██████╗██╗   ██╗██████╗ ███████╗██████╗
+  ██╔════╝╚██╗ ██╔╝██╔══██╗██╔════╝██╔══██╗
+  ██║      ╚████╔╝ ██████╔╝█████╗  ██████╔╝
+  ██║       ╚██╔╝  ██╔══██╗██╔══╝  ██╔══██╗
+  ╚██████╗   ██║   ██████╔╝███████╗██║  ██║
+   ╚═════╝   ╚═╝   ╚═════╝ ╚══════╝╚═╝  ╚═╝
+EOF
+  printf '%s' "$C_RESET"
+  local ws_disp="${HERE/#$HOME/~}"
+  local subtitle="  local security harness · model: $NC_PROFILE_NAME ($NC_PARAM_SIZE) · ws: $ws_disp"
+  printf '%s%s%s\n' "$C_DIM" "$subtitle" "$C_RESET"
+  hr '─'
+  printf '\n'
+}
+
+pick_mode() {
+  printf '  %s[1] cyber%s   %s— full operator: shell · tools · read/write · live streaming%s\n' \
+    "$C_CYAN$C_BOLD" "$C_RESET" "$C_DIM" "$C_RESET"
+  printf '  %s[2] plan%s    %s— read-only planner: threat model · attack chain · no exec%s\n' \
+    "$C_CYAN$C_BOLD" "$C_RESET" "$C_DIM" "$C_RESET"
+  printf '  %s[3] findings%s%s— view identified security findings dashboard%s\n' \
+    "$C_YELLOW$C_BOLD" "$C_RESET" "$C_DIM" "$C_RESET"
+  printf '  %s[q] quit%s\n\n' "$C_GRAY" "$C_RESET"
+  printf '  %sselect ›%s ' "$C_CYAN" "$C_RESET"
+  local choice
+  IFS= read -r choice
+  case "$choice" in
+    1|c|cyber) mode=cyber ;;
+    2|p|plan)  mode=plan ;;
+    3|f|findings) render_findings; exit 0 ;;
+    q|quit|'') exit 0 ;;
+    *) printf '%s  unknown choice: %s%s\n' "$C_RED" "$choice" "$C_RESET" >&2; exit 1 ;;
+  esac
+}
+
+run_streaming() {
+  local mode="$1" prompt="$2" session_flag="${3:-}"
+
+  printf '\n'
+  hr '─'
+  print_statusbar "$mode" "RUNNING" "$NC_PROFILE_NAME"
+  hr '─'
+  printf '\n'
+
+  local agent_file="$HERE/.opencode/agents/${mode}.md"
+  "$HERE/lib/engine.py" "$NC_OLLAMA_NAME" "$agent_file" "$prompt"
+
+  printf '\n'
+  hr '─'
+  print_statusbar "$mode" "COMPLETED" "$NC_PROFILE_NAME"
+  hr '─'
+  printf '\n'
+}
+
+run_interactive() {
+  local mode="$1"
+  local agent_file="$HERE/.opencode/agents/${mode}.md"
+
+  banner
+  print_statusbar "$mode" "INTERACTIVE TUI" "$NC_PROFILE_NAME"
+  hr '─'
+  printf '%s  Type your security tasks or "exit" to quit.%s\n\n' "$C_DIM" "$C_RESET"
+
+  "$HERE/lib/engine.py" "$NC_OLLAMA_NAME" "$agent_file" "--interactive" "$mode" "$HERE"
+}
+
+# ─── argument parsing ─────────────────────────────────────────────────────────
+mode="" run="" session_id="" list_flag=0 findings_flag=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    cyber|plan) mode="$1"; shift ;;
-    --run) shift; run="${1:-}"; shift ;;
-    *) shift ;;
+    cyber|plan)     mode="$1"; shift ;;
+    --run)          shift; run="${1:-}"; shift ;;
+    --profile|-p)   shift; load_profile "${1:-}"; shift ;;
+    --profiles)     echo "Available Model Profiles:"; list_profiles; exit 0 ;;
+    --findings|-f)  findings_flag=1; shift ;;
+    --session|-s)   shift; session_id="${1:-}"; shift ;;
+    --sessions)     list_flag=1; shift ;;
+    -h|--help)
+      cat <<EOF
+NeoCyber — Cybersecurity AI Harness
+Usage:
+  ./cyber [cyber|plan]                    Interactive terminal session
+  ./cyber [cyber|plan] --run "task"       Live streaming execution
+  ./cyber --profile <profile_name>        Select model profile
+  ./cyber --profiles                      List supported profiles
+  ./cyber --findings                      Display findings dashboard
+  ./cyber --sessions                      List sessions
+EOF
+      exit 0
+      ;;
+    *)
+      printf '%s  unknown argument: %s%s\n' "$C_RED" "$1" "$C_RESET" >&2
+      exit 1
+      ;;
   esac
 done
 
+if [[ $findings_flag -eq 1 ]]; then
+  banner
+  render_findings
+  exit 0
+fi
+
+if [[ $list_flag -eq 1 ]]; then
+  cd "$HERE" && "$OPENCODE" session list
+  exit 0
+fi
+
+[[ -n "$mode" ]] || { banner; pick_mode; }
+
 if [[ -n "$run" ]]; then
-  exec "$HERE/lib/engine.py" "$mode" --run "$run"
+  banner
+  run_streaming "$mode" "$run" "$session_id"
 else
-  exec "$HERE/lib/engine.py" "$mode"
+  run_interactive "$mode"
 fi
