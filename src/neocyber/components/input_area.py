@@ -5,11 +5,78 @@ from typing import List, Optional
 
 from textual import events
 from textual.app import ComposeResult
-from textual.binding import Binding
 from textual.containers import Container
 from textual.message import Message as TextualMessage
 from textual.widget import Widget
 from textual.widgets import TextArea
+
+
+class PromptTextArea(TextArea):
+    """Custom TextArea that intercepts Enter for submission and Shift+Enter for newlines."""
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.prompt_history: List[str] = []
+        self.prompt_history_index: int = -1
+
+    async def _on_key(self, event: events.Key) -> None:
+        # Shift+Enter -> Insert newline
+        if event.key == "shift+enter":
+            event.stop()
+            event.prevent_default()
+            start, end = self.selection
+            self._replace_via_keyboard("\n", start, end)
+            return
+
+        # Enter / Return -> Submit prompt
+        if event.key in ("enter", "return"):
+            event.stop()
+            event.prevent_default()
+            val = self.text.strip()
+            if val:
+                self.prompt_history.append(val)
+                self.prompt_history_index = -1
+                self.text = ""
+                # Dispatch Submitted message through parent InputArea
+                self.post_message(InputArea.Submitted(val))
+            return
+
+        # Tab -> Dispatch TabPressed to switch agent mode
+        if event.key == "tab":
+            event.stop()
+            event.prevent_default()
+            self.post_message(InputArea.TabPressed())
+            return
+
+        # Up arrow at the very top line cycles history backwards
+        if event.key == "up" and self.cursor_location[0] == 0:
+            if self.prompt_history:
+                event.stop()
+                event.prevent_default()
+                if self.prompt_history_index == -1:
+                    self.prompt_history_index = len(self.prompt_history) - 1
+                elif self.prompt_history_index > 0:
+                    self.prompt_history_index -= 1
+                self.text = self.prompt_history[self.prompt_history_index]
+                self.cursor_location = (0, len(self.text))
+            return
+
+        # Down arrow at the bottom line cycles history forwards
+        if event.key == "down" and self.cursor_location[0] >= self.document.line_count - 1:
+            if self.prompt_history and self.prompt_history_index != -1:
+                event.stop()
+                event.prevent_default()
+                if self.prompt_history_index < len(self.prompt_history) - 1:
+                    self.prompt_history_index += 1
+                    self.text = self.prompt_history[self.prompt_history_index]
+                    self.cursor_location = (0, len(self.text))
+                else:
+                    self.prompt_history_index = -1
+                    self.text = ""
+            return
+
+        # Default TextArea key handling (typing, arrows, backspace, selection, etc.)
+        await super()._on_key(event)
 
 
 class InputArea(Widget):
@@ -57,78 +124,28 @@ class InputArea(Widget):
     class TabPressed(TextualMessage):
         """Dispatched when Tab is pressed to cycle agent modes."""
 
-    def __init__(self, id: Optional[str] = None) -> None:
-        super().__init__(id=id)
-        self.history: List[str] = []
-        self.history_index: int = -1
-
     def compose(self) -> ComposeResult:
         with Container(classes="input-frame"):
-            yield TextArea(
+            yield PromptTextArea(
                 id="prompt-textarea",
                 show_line_numbers=False,
             )
 
     def on_mount(self) -> None:
-        textarea = self.query_one("#prompt-textarea", TextArea)
-        textarea.focus()
+        self.focus_input()
 
     def focus_input(self) -> None:
-        self.query_one("#prompt-textarea", TextArea).focus()
+        self.query_one("#prompt-textarea", PromptTextArea).focus()
 
     def get_text(self) -> str:
-        return self.query_one("#prompt-textarea", TextArea).text
+        return self.query_one("#prompt-textarea", PromptTextArea).text
 
     def set_text(self, text: str) -> None:
-        textarea = self.query_one("#prompt-textarea", TextArea)
+        textarea = self.query_one("#prompt-textarea", PromptTextArea)
         textarea.text = text
         textarea.cursor_location = (0, len(text))
 
     def clear(self) -> None:
-        self.query_one("#prompt-textarea", TextArea).text = ""
-        self.history_index = -1
-
-    def on_key(self, event: events.Key) -> None:
-        textarea = self.query_one("#prompt-textarea", TextArea)
-
-        if event.key == "enter" and not event.shift:
-            event.prevent_default()
-            event.stop()
-            val = textarea.text.strip()
-            if val:
-                self.history.append(val)
-                self.history_index = -1
-                self.clear()
-                self.post_message(self.Submitted(val))
-            return
-
-        if event.key == "tab":
-            event.prevent_default()
-            event.stop()
-            self.post_message(self.TabPressed())
-            return
-
-        # Up arrow at the very top line cycles history backwards
-        if event.key == "up" and textarea.cursor_location[0] == 0:
-            if self.history:
-                event.prevent_default()
-                event.stop()
-                if self.history_index == -1:
-                    self.history_index = len(self.history) - 1
-                elif self.history_index > 0:
-                    self.history_index -= 1
-                self.set_text(self.history[self.history_index])
-            return
-
-        # Down arrow at the bottom line cycles history forwards
-        if event.key == "down" and textarea.cursor_location[0] >= textarea.document.line_count - 1:
-            if self.history and self.history_index != -1:
-                event.prevent_default()
-                event.stop()
-                if self.history_index < len(self.history) - 1:
-                    self.history_index += 1
-                    self.set_text(self.history[self.history_index])
-                else:
-                    self.history_index = -1
-                    self.clear()
-            return
+        textarea = self.query_one("#prompt-textarea", PromptTextArea)
+        textarea.text = ""
+        textarea.prompt_history_index = -1
