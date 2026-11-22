@@ -1,2 +1,11 @@
 reports/evidence/*
 !reports/evidence/.gitkeep
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+.coverage
+data/
+*.db
+
