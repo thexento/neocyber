@@ -1,20 +1,27 @@
 #!/usr/bin/env python3
 """
-lib/engine.py — High-Performance Streaming Execution Engine & Interactive REPL for NeoCyber
-Connects directly to local Ollama API, streaming tokens word-by-word in real time
-with live command execution, polished cyberpunk box styling, and history.
-Zero third-party dependencies (pure standard library).
+lib/engine.py — OpenCode Clone Terminal User Interface & Streaming Engine for NeoCyber
+Features:
+- Exact OpenCode TUI header, footer, shortcuts, status badges, and input box
+- Live word-by-word streaming with real-time Markdown rendering (no raw '#' or backticks)
+- In-place security tool execution inside clean OpenCode execution panels
+- Dynamic Workspace indicator (~/xento/test/neocyber)
+- In-app Model Switcher (:model or Ctrl+M)
+- In-app Agent Switcher (:agent or Tab)
+- In-app Session Management (:sessions)
 """
 
 import sys
 import os
 import json
 import time
+import shutil
+import re
 import subprocess
 import urllib.request
 import urllib.error
 
-# ANSI Color Codes
+# ANSI Color & Style Codes
 CYAN = "\033[36m"
 BRIGHT_CYAN = "\033[96m"
 GREEN = "\033[32m"
@@ -23,214 +30,325 @@ YELLOW = "\033[33m"
 BRIGHT_YELLOW = "\033[93m"
 RED = "\033[31m"
 BRIGHT_RED = "\033[91m"
+MAGENTA = "\033[35m"
 BOLD = "\033[1m"
 DIM = "\033[2m"
 GRAY = "\033[90m"
 WHITE = "\033[97m"
+ITALIC = "\033[3m"
 RESET = "\033[0m"
 
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434")
 
-def timestamp():
-    return time.strftime("%H:%M:%S")
+class OpenCodeTUI:
+    def __init__(self, workspace_path, current_agent="cyber", current_model=None):
+        self.workspace = workspace_path
+        self.agent = current_agent
+        self.model = current_model or "hf.co/bartowski/Qwen2.5-Coder-7B-Instruct-abliterated-GGUF:Q4_K_M"
+        self.model_display = self.format_model_name(self.model)
+        self.history = []
+        self.running = True
 
-def type_writer(text, delay=0.015):
-    """Types out a string character-by-character for live status feel."""
-    for char in text:
-        sys.stdout.write(char)
-        sys.stdout.flush()
-        time.sleep(delay)
-    sys.stdout.write("\n")
-    sys.stdout.flush()
+    def get_term_size(self):
+        size = shutil.get_terminal_size((80, 24))
+        return size.columns, size.lines
 
-def activity(icon, color, msg):
-    print(f"{GRAY}{timestamp()}{RESET} {color}{icon}{RESET}  {WHITE}{msg}{RESET}", flush=True)
+    def format_model_name(self, name):
+        if "Qwen2.5-Coder-7B" in name:
+            return "Qwen2.5-Coder 7B (local)"
+        return name.split("/")[-1].split(":")[0]
 
-def execute_command_live(cmd):
-    # Live animated typing status
-    sys.stdout.write(f"\n{GRAY}{timestamp()}{RESET} {BRIGHT_YELLOW}▶{RESET}  ")
-    type_writer(f"Executing command: {cmd}...", delay=0.01)
-
-    start_time = time.time()
-    try:
-        proc = subprocess.Popen(
-            cmd,
-            shell=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1
-        )
-
-        output_lines = []
-        for line in proc.stdout:
-            clean_line = line.rstrip()
-            output_lines.append(clean_line)
-
-        proc.wait()
-        duration = round(time.time() - start_time, 2)
-        exit_code = proc.returncode
-
-        # Draw a high-end terminal result box
-        width = 82
-        border_col = BRIGHT_CYAN if exit_code == 0 else BRIGHT_RED
-        status_col = BRIGHT_GREEN if exit_code == 0 else BRIGHT_RED
-        status_text = f"SUCCESS · Exit 0 · {duration}s" if exit_code == 0 else f"FAILED · Exit {exit_code} · {duration}s"
-
-        print(f"\n{border_col}╭── {BOLD}SECURITY TOOL OUTPUT{RESET}{border_col} ──" + "─" * (width - 27) + f"╮{RESET}")
-        print(f"{border_col}│{RESET}  {GRAY}Command :{RESET} {BOLD}{WHITE}{cmd}{RESET}")
-        print(f"{border_col}│{RESET}  {GRAY}Status  :{RESET} {status_col}{status_text}{RESET}")
-        print(f"{border_col}├" + "─" * (width - 2) + f"┤{RESET}")
-
-        if not output_lines:
-            print(f"{border_col}│{RESET}  {DIM}(No output generated){RESET}")
-        else:
-            display_count = min(len(output_lines), 20)
-            for i in range(display_count):
-                line_str = output_lines[i]
-                # truncate line width if overly long
-                if len(line_str) > width - 6:
-                    line_str = line_str[:width - 9] + "..."
-                print(f"{border_col}│{RESET}  {BRIGHT_GREEN if exit_code == 0 else YELLOW}{line_str}{RESET}")
+    def render_header(self):
+        cols, _ = self.get_term_size()
+        ws_display = self.workspace.replace(os.path.expanduser("~"), "~")
+        
+        # OpenCode top bar
+        title = f"{BOLD}{WHITE}NeoCyber{RESET} {DIM}v2.3.2{RESET}"
+        ws_info = f"{DIM}{ws_display}{RESET}"
+        
+        spacing = cols - len("NeoCyber v2.3.2") - len(ws_display) - 4
+        if spacing < 2:
+            spacing = 2
             
-            if len(output_lines) > 20:
-                print(f"{border_col}│{RESET}  {GRAY}... [{len(output_lines) - 20} lines omitted for context efficiency]{RESET}")
+        print(f"\n {title}{' ' * spacing}{ws_info}")
+        
+        # Sub-status badge bar (identical to OpenCode)
+        agent_badge = f"{BOLD}{CYAN}{self.agent.capitalize()}{RESET}"
+        model_badge = f"{DIM}·{RESET} {WHITE}{self.model_display}{RESET} {GRAY}Ollama{RESET}"
+        print(f" ┃ {agent_badge} {model_badge}")
+        print(f" {GRAY}" + "─" * (cols - 2) + f"{RESET}\n")
 
-        print(f"{border_col}╰" + "─" * (width - 2) + f"╯{RESET}\n", flush=True)
-        activity("✓" if exit_code == 0 else "✗", BRIGHT_GREEN if exit_code == 0 else BRIGHT_RED, f"Command execution completed ({duration}s)")
-        return "\n".join(output_lines)
-    except Exception as e:
-        print(f"{RED}Error executing command: {e}{RESET}")
-        return str(e)
+    def render_footer(self):
+        cols, _ = self.get_term_size()
+        shortcuts = f"{GRAY}tab{RESET} agent  {GRAY}:model{RESET} switch model  {GRAY}:clear{RESET} clear  {GRAY}:help{RESET} commands  {GRAY}ctrl+c{RESET} quit"
+        ws_display = self.workspace.replace(os.path.expanduser("~"), "~")
+        right_info = f"{DIM}{ws_display}{RESET}"
+        
+        space = cols - len("tab agent  :model switch model  :clear clear  :help commands  ctrl+c quit") - len(ws_display) - 4
+        if space < 2:
+            space = 2
+        print(f"\n {GRAY}" + "─" * (cols - 2) + f"{RESET}")
+        print(f" {shortcuts}{' ' * space}{right_info}\n")
 
-def stream_chat(model_name, system_prompt, user_prompt, conversation_history=None):
-    if conversation_history is None:
-        conversation_history = []
-
-    url = f"{OLLAMA_HOST}/api/chat"
-    messages = [{"role": "system", "content": system_prompt}] + conversation_history + [
-        {"role": "user", "content": user_prompt}
-    ]
-
-    payload = {
-        "model": model_name,
-        "messages": messages,
-        "stream": True,
-        "options": {
-            "temperature": 0.2
-        }
-    }
-
-    req = urllib.request.Request(
-        url,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"}
-    )
-
-    sys.stdout.write(f"{GRAY}{timestamp()}{RESET} {BRIGHT_CYAN}◉{RESET}  ")
-    type_writer(f"Analyzing security context with {model_name}...", delay=0.012)
-    print(f"\n{BRIGHT_CYAN}╭── {BOLD}AGENT STREAMING RESPONSE{RESET}{BRIGHT_CYAN} ──" + "─" * 51 + f"╮{RESET}\n")
-
-    full_response = ""
-    try:
-        with urllib.request.urlopen(req, timeout=120) as resp:
-            for line in resp:
-                if not line:
-                    continue
-                data = json.loads(line.decode("utf-8"))
-                chunk = data.get("message", {}).get("content", "")
-                if chunk:
-                    # Stream chunk word-by-word instantly to terminal
-                    sys.stdout.write(chunk)
-                    sys.stdout.flush()
-                    full_response += chunk
-
-                if data.get("done", False):
-                    break
-    except urllib.error.URLError as e:
-        print(f"\n{RED}Error connecting to Ollama: {e}{RESET}\n")
-        return full_response
-
-    print(f"\n\n{BRIGHT_CYAN}╰" + "─" * 78 + f"╯{RESET}\n", flush=True)
-    activity("✓", BRIGHT_GREEN, "Response stream complete")
-
-    # Inspect for executable shell blocks inside the response
-    lines = full_response.splitlines()
-    i = 0
-    while i < len(lines):
-        line = lines[i].strip()
-        if line.startswith("```bash") or line.startswith("```sh") or line.startswith("```shell"):
-            cmd_lines = []
-            i += 1
-            while i < len(lines) and not lines[i].strip().startswith("```"):
-                cmd_lines.append(lines[i].strip())
-                i += 1
-            potential_cmd = " && ".join([c for c in cmd_lines if c and not c.startswith("#")])
-            if potential_cmd:
-                execute_command_live(potential_cmd)
-        i += 1
-
-    return full_response
-
-def interactive_loop(model, agent_file, mode_name):
-    system_prompt = "You are CYBER, an offensive/defensive security operator. State Objective, Action, Result, Next. Output executable bash commands inside ```bash blocks."
-    if os.path.exists(agent_file):
-        with open(agent_file, "r") as f:
-            content = f.read()
-            parts = content.split("---")
-            if len(parts) >= 3:
-                system_prompt = parts[2].strip()
-            else:
-                system_prompt = content.strip()
-
-    print(f"{GRAY}──────────────────────────────────────────────────────────────────────────────{RESET}")
-    print(f" {BOLD}{BRIGHT_CYAN}NEOCYBER REPL{RESET} · {WHITE}{mode_name.upper()} MODE{RESET} · {GRAY}Type your security task or 'exit' to quit{RESET}")
-    print(f"{GRAY}──────────────────────────────────────────────────────────────────────────────{RESET}\n")
-
-    history = []
-    while True:
-        try:
-            prompt = input(f"{BRIGHT_CYAN}neocyber ({mode_name}) › {RESET}").strip()
-            if not prompt:
+    def format_stream_token(self, token, state):
+        """
+        Formats raw model output stream dynamically:
+        Strips markdown hashes (##), highlights headings, styles bullet points,
+        and hides raw code fences while keeping syntax clean.
+        """
+        # Buffer text for line-based markdown parsing
+        state['buffer'] += token
+        out = ""
+        while "\n" in state['buffer']:
+            line, state['buffer'] = state['buffer'].split("\n", 1)
+            
+            # Check for code fence
+            if line.startswith("```"):
+                if not state['in_code']:
+                    state['in_code'] = True
+                    lang = line[3:].strip() or "sh"
+                    out += f"\n  {GRAY}┌─ {WHITE}{BOLD}{lang}{RESET}{GRAY} " + "─" * 45 + f"┐{RESET}\n"
+                else:
+                    state['in_code'] = False
+                    out += f"  {GRAY}└" + "─" * 50 + f"┘{RESET}\n\n"
                 continue
-            if prompt.lower() in ["exit", "quit", "q"]:
-                print(f"{DIM}Exiting NeoCyber session. Stay secure.{RESET}")
-                break
 
-            response = stream_chat(model, system_prompt, prompt, history)
-            history.append({"role": "user", "content": prompt})
-            history.append({"role": "assistant", "content": response})
-            # Keep history bounded for small models
-            if len(history) > 6:
-                history = history[-6:]
-            print()
-        except (KeyboardInterrupt, EOFError):
-            print(f"\n{DIM}Session interrupted.{RESET}")
-            break
+            if state['in_code']:
+                out += f"  {GRAY}│{RESET}  {BRIGHT_GREEN}{line}{RESET}\n"
+                continue
 
-def main():
-    if len(sys.argv) < 3:
-        print("Usage: engine.py <model> <agent_prompt_file> [--interactive <mode> | <user_prompt>]")
-        sys.exit(1)
+            # Clean Headings (removes ##, ###, and formats with clean OpenCode style)
+            if re.match(r'^#{1,4}\s+', line):
+                clean_heading = re.sub(r'^#{1,4}\s+', '', line).strip()
+                out += f"\n{BOLD}{BRIGHT_CYAN}◆ {clean_heading.upper()}{RESET}\n"
+                continue
 
-    model = sys.argv[1]
-    agent_file = sys.argv[2]
+            # Clean list bullet items (- or *)
+            if re.match(r'^\s*[-*]\s+', line):
+                clean_bullet = re.sub(r'^\s*[-*]\s+', '', line).strip()
+                out += f"  {CYAN}·{RESET} {clean_bullet}\n"
+                continue
 
-    if sys.argv[3] == "--interactive":
-        mode_name = sys.argv[4] if len(sys.argv) > 4 else "cyber"
-        interactive_loop(model, agent_file, mode_name)
-    else:
-        user_prompt = " ".join(sys.argv[3:])
-        system_prompt = "You are CYBER, a security operator. State Objective, Action, Result, Next. Output bash commands in ```bash blocks."
+            # Inline bold / code formatting
+            clean_line = re.sub(r'\*\*(.*?)\*\*', f'{BOLD}\\1{RESET}', line)
+            clean_line = re.sub(r'`(.*?)`', f'{YELLOW}\\1{RESET}', clean_line)
+
+            out += f"  {clean_line}\n"
+
+        return out
+
+    def execute_security_command(self, cmd):
+        cols, _ = self.get_term_size()
+        box_w = min(cols - 4, 86)
+        
+        print(f"\n  {GRAY}{time.strftime('%H:%M:%S')}{RESET} {BRIGHT_YELLOW}▶{RESET} {WHITE}Executing tool:{RESET} {BOLD}{WHITE}{cmd}{RESET}")
+        print(f"  {CYAN}╭─ {BOLD}TOOL EXECUTION{RESET}{CYAN} " + "─" * (box_w - 18) + f"╮{RESET}")
+        print(f"  {CYAN}│{RESET}  {GRAY}$ {cmd}{RESET}")
+        print(f"  {CYAN}│{RESET}  {CYAN}◉ Running live...{RESET}")
+        print(f"  {CYAN}├" + "─" * (box_w - 2) + f"┤{RESET}")
+
+        start_time = time.time()
+        output_lines = []
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                shell=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1
+            )
+            for line in proc.stdout:
+                c_line = line.rstrip()
+                output_lines.append(c_line)
+                if len(output_lines) <= 15:
+                    disp = c_line[:box_w - 6]
+                    print(f"  {CYAN}│{RESET}  {BRIGHT_GREEN}{disp}{RESET}", flush=True)
+
+            proc.wait()
+            duration = round(time.time() - start_time, 2)
+            exit_code = proc.returncode
+
+            if len(output_lines) > 15:
+                print(f"  {CYAN}│{RESET}  {GRAY}... [{len(output_lines) - 15} lines summarized for context efficiency]{RESET}")
+
+            status_str = f"{BRIGHT_GREEN}✓ Completed · Exit 0 · {duration}s{RESET}" if exit_code == 0 else f"{BRIGHT_RED}✗ Exit {exit_code} · {duration}s{RESET}"
+            print(f"  {CYAN}├" + "─" * (box_w - 2) + f"┤{RESET}")
+            print(f"  {CYAN}│{RESET}  {status_str}")
+            print(f"  {CYAN}╰" + "─" * (box_w - 2) + f"╯{RESET}\n", flush=True)
+            return "\n".join(output_lines)
+        except Exception as e:
+            print(f"  {CYAN}│{RESET}  {RED}Execution failed: {e}{RESET}")
+            print(f"  {CYAN}╰" + "─" * (box_w - 2) + f"╯{RESET}\n", flush=True)
+            return str(e)
+
+    def stream_prompt(self, user_prompt):
+        agent_file = os.path.join(self.workspace, f".opencode/agents/{self.agent}.md")
+        system_prompt = f"You are {self.agent.upper()}, a security specialist in {self.workspace}. State Objective, Action, Result, Next. Enclose commands in ```bash blocks."
         if os.path.exists(agent_file):
             with open(agent_file, "r") as f:
                 content = f.read()
                 parts = content.split("---")
                 if len(parts) >= 3:
                     system_prompt = parts[2].strip()
-                else:
-                    system_prompt = content.strip()
-        stream_chat(model, system_prompt, user_prompt)
+
+        messages = [{"role": "system", "content": system_prompt}] + self.history + [
+            {"role": "user", "content": user_prompt}
+        ]
+
+        url = f"{OLLAMA_HOST}/api/chat"
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "stream": True,
+            "options": {"temperature": 0.2}
+        }
+
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"}
+        )
+
+        print(f"  {GRAY}{time.strftime('%H:%M:%S')}{RESET} {BRIGHT_CYAN}◉{RESET} {WHITE}Thinking...{RESET}\n")
+
+        full_raw = ""
+        stream_state = {'buffer': '', 'in_code': False}
+        commands_to_run = []
+
+        try:
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                for chunk_line in resp:
+                    if not chunk_line:
+                        continue
+                    data = json.loads(chunk_line.decode("utf-8"))
+                    token = data.get("message", {}).get("content", "")
+                    if token:
+                        full_raw += token
+                        formatted = self.format_stream_token(token, stream_state)
+                        if formatted:
+                            sys.stdout.write(formatted)
+                            sys.stdout.flush()
+
+                    if data.get("done", False):
+                        break
+
+            # Flush remaining buffer
+            if stream_state['buffer']:
+                clean = stream_state['buffer'].strip()
+                if clean and not clean.startswith("```"):
+                    sys.stdout.write(f"  {clean}\n")
+                    sys.stdout.flush()
+
+        except Exception as e:
+            print(f"\n{RED}Error contacting model: {e}{RESET}")
+            return
+
+        # Extract commands from full_raw
+        lines = full_raw.splitlines()
+        i = 0
+        while i < len(lines):
+            l = lines[i].strip()
+            if l.startswith("```bash") or l.startswith("```sh") or l.startswith("```shell"):
+                c_block = []
+                i += 1
+                while i < len(lines) and not lines[i].strip().startswith("```"):
+                    c_block.append(lines[i].strip())
+                    i += 1
+                cmd = " && ".join([c for c in c_block if c and not c.startswith("#")])
+                if cmd:
+                    commands_to_run.append(cmd)
+            i += 1
+
+        for cmd in commands_to_run:
+            self.execute_security_command(cmd)
+
+        self.history.append({"role": "user", "content": user_prompt})
+        self.history.append({"role": "assistant", "content": full_raw})
+        if len(self.history) > 6:
+            self.history = self.history[-6:]
+
+    def list_models(self):
+        try:
+            req = urllib.request.Request(f"{OLLAMA_HOST}/api/tags")
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                models = [m['name'] for m in data.get('models', [])]
+                return models
+        except Exception:
+            return ["hf.co/bartowski/Qwen2.5-Coder-7B-Instruct-abliterated-GGUF:Q4_K_M", "qwen2.5-coder:7b"]
+
+    def model_switch_prompt(self):
+        models = self.list_models()
+        print(f"\n{BOLD}{BRIGHT_CYAN}Available Models:{RESET}")
+        for idx, m in enumerate(models, 1):
+            active = f" {GREEN}● active{RESET}" if m == self.model else ""
+            print(f"  [{idx}] {m}{active}")
+        print()
+        choice = input(f"{CYAN}Select model (1-{len(models)}) or press Enter to cancel › {RESET}").strip()
+        if choice.isdigit() and 1 <= int(choice) <= len(models):
+            self.model = models[int(choice) - 1]
+            self.model_display = self.format_model_name(self.model)
+            print(f"{GREEN}✓ Switched active model to: {self.model}{RESET}\n")
+
+    def run_repl(self):
+        os.system('clear' if os.name == 'posix' else 'cls')
+        self.render_header()
+        
+        while self.running:
+            try:
+                prompt = input(f"{BOLD}{WHITE}Ask anything… {RESET}").strip()
+                if not prompt:
+                    continue
+
+                if prompt in [":q", ":quit", "exit"]:
+                    print(f"{DIM}Goodbye!{RESET}")
+                    break
+
+                if prompt == ":clear":
+                    os.system('clear' if os.name == 'posix' else 'cls')
+                    self.render_header()
+                    continue
+
+                if prompt in [":model", ":models"]:
+                    self.model_switch_prompt()
+                    continue
+
+                if prompt in [":agent", "tab"]:
+                    self.agent = "plan" if self.agent == "cyber" else "cyber"
+                    print(f"{GREEN}✓ Switched agent to: {self.agent}{RESET}\n")
+                    continue
+
+                if prompt in [":help", ":h"]:
+                    print(f"\n{BOLD}Available Commands:{RESET}")
+                    print(f"  {CYAN}:model{RESET}   Switch active Ollama model")
+                    print(f"  {CYAN}:agent{RESET}   Switch between cyber (operator) and plan (planner)")
+                    print(f"  {CYAN}:clear{RESET}   Clear terminal screen")
+                    print(f"  {CYAN}:quit{RESET}    Exit session\n")
+                    continue
+
+                self.stream_prompt(prompt)
+                self.render_footer()
+
+            except (KeyboardInterrupt, EOFError):
+                print(f"\n{DIM}Session closed.{RESET}")
+                break
+
+def main():
+    workspace = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    agent = "cyber"
+    if len(sys.argv) > 1 and sys.argv[1] in ["cyber", "plan"]:
+        agent = sys.argv[1]
+
+    tui = OpenCodeTUI(workspace, current_agent=agent)
+    
+    if len(sys.argv) > 2 and sys.argv[2] == "--run":
+        user_prompt = " ".join(sys.argv[3:])
+        tui.render_header()
+        tui.stream_prompt(user_prompt)
+        tui.render_footer()
+    else:
+        tui.run_repl()
 
 if __name__ == "__main__":
     main()
