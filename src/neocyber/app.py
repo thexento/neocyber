@@ -1,4 +1,4 @@
-"""Main NeoCyber Textual Application matching OpenCode's visual and UX design."""
+"""Main NeoCyber Textual Application matching Antigravity and OpenCode UX design."""
 from __future__ import annotations
 
 import asyncio
@@ -23,12 +23,13 @@ from neocyber.components.model_selector import ModelSelector
 from neocyber.components.status_bar import StatusBar
 from neocyber.engine.agent import AgentRunner
 from neocyber.engine.ollama import OllamaClient
+from neocyber.engine.tools import SecurityValidator
 from neocyber.models.message import Message, Role, ToolCall
 from neocyber.models.profile import ModelProfile, load_profiles
 
 
 class ConfirmCommandModal(ModalScreen[bool]):
-    """OpenCode-style permission prompt before executing proposed shell commands."""
+    """Clean, subtle confirmation prompt only for sensitive/sudo commands."""
 
     DEFAULT_CSS = """
     ConfirmCommandModal {
@@ -36,7 +37,7 @@ class ConfirmCommandModal(ModalScreen[bool]):
         background: rgba(0, 0, 0, 0.75);
     }
     #confirm-box {
-        width: 70;
+        width: 68;
         max-width: 90%;
         height: auto;
         background: #18181b;
@@ -79,7 +80,7 @@ class ConfirmCommandModal(ModalScreen[bool]):
 
     def compose(self) -> ComposeResult:
         with Container(id="confirm-box"):
-            yield Static("⚡ PERMISSION REQUIRED: EXECUTE SHELL COMMAND?", id="confirm-title")
+            yield Static("⚡ ELEVATED PRIVILEGES REQUIRED", id="confirm-title")
             yield Static(f"$ {self.command}", id="confirm-cmd")
             with Horizontal(id="confirm-buttons"):
                 yield Button("Approve (Enter / Y)", variant="success", id="btn-approve")
@@ -168,6 +169,11 @@ class NeoCyberApp(App[None]):
 
     def on_mount(self) -> None:
         self.query_one(InputArea).focus_input()
+        if hasattr(self, "_driver") and self._driver:
+            try:
+                self._driver._disable_mouse_support()
+            except Exception:
+                pass
 
     # ── Actions ───────────────────────────────────────────────────────────────
 
@@ -322,13 +328,10 @@ class NeoCyberApp(App[None]):
         chat = self.query_one(ChatArea)
         status_bar = self.query_one(StatusBar)
 
-        # 1. Mount user message
+        # 1. Mount user prompt line
         chat.add_user_message(prompt)
         status_bar.status_text = "THINKING"
         self._is_busy = True
-
-        # 2. Mount assistant message
-        assistant_view = chat.start_assistant_message(agent=self.agent_mode)
 
         profile = self.profiles.get(
             self.active_profile_name,
@@ -339,39 +342,62 @@ class NeoCyberApp(App[None]):
             ),
         )
 
-        streamed_response = [""]
-
-        def _on_token(token: str) -> None:
-            streamed_response[0] += token
-            assistant_view.update_content(streamed_response[0])
-            status_bar.status_text = "STREAMING"
+        current_prompt = prompt
+        accumulated_history = list(self.history)
+        max_agent_loops = 5
+        loop_count = 0
 
         try:
-            # Step A: Stream LLM response
-            full_resp, _ = await self.agent_runner.execute_turn(
-                agent_name=self.agent_mode,
-                profile=profile,
-                history=self.history,
-                user_prompt=prompt,
-                on_token=_on_token,
-                # Do not auto-run tools inside execute_turn; we confirm first!
-                on_tool_start=None,
-                on_tool_chunk=None,
-                on_tool_complete=None,
-            )
+            while loop_count < max_agent_loops and self._is_busy:
+                loop_count += 1
+                status_bar.status_text = "THINKING" if loop_count == 1 else "ANALYZING"
 
-            # Step B: Check if commands were proposed in Cyber mode
-            tool_calls: List[ToolCall] = []
-            if self.agent_mode == "cyber" and self._is_busy:
-                commands = self.agent_runner.extract_commands(full_resp)
-                for cmd in commands:
-                    # Ask permission via modal screen
-                    status_bar.status_text = "CONFIRMATION"
-                    approved = await self.push_screen_wait(ConfirmCommandModal(cmd))
+                # Mount assistant message block for this turn
+                assistant_view = chat.start_assistant_message(agent=self.agent_mode)
+                streamed_tokens = [""]
 
-                    tool_uid = f"tool-{len(tool_calls)+1}"
+                def _on_token(token: str) -> None:
+                    streamed_tokens[0] += token
+                    assistant_view.update_content(streamed_tokens[0])
+                    status_bar.status_text = "STREAMING"
+
+                full_resp, _ = await self.agent_runner.execute_turn(
+                    agent_name=self.agent_mode,
+                    profile=profile,
+                    history=accumulated_history,
+                    user_prompt=current_prompt,
+                    on_token=_on_token,
+                    on_tool_start=None,
+                    on_tool_chunk=None,
+                    on_tool_complete=None,
+                )
+
+                # Record turn to accumulated context
+                accumulated_history.append(Message(role=Role.USER, content=current_prompt))
+                accumulated_history.append(Message(role=Role.ASSISTANT, content=full_resp, agent=self.agent_mode))
+
+                # Check if cyber operator proposed commands
+                commands = self.agent_runner.extract_commands(full_resp) if self.agent_mode == "cyber" else []
+                if not commands or not self._is_busy:
+                    # No commands or completed -> agent finished task!
+                    break
+
+                # Execute proposed commands
+                tool_results = []
+                for idx, cmd in enumerate(commands):
+                    if not self._is_busy:
+                        break
+
+                    # Only ask permission if command is sensitive (sudo / destructive)
+                    is_sensitive = SecurityValidator.is_sensitive_command(cmd)
+                    approved = True
+                    if is_sensitive:
+                        status_bar.status_text = "CONFIRMATION"
+                        approved = await self.push_screen_wait(ConfirmCommandModal(cmd))
+
+                    tool_uid = f"tool-{loop_count}-{idx+1}"
                     if approved:
-                        status_bar.status_text = "RUNNING TOOL"
+                        status_bar.status_text = f"RUNNING: {cmd.split()[0]}"
                         card = chat.add_tool_card(tool_uid, "bash", cmd)
 
                         def _chunk_cb(chunk: str):
@@ -381,46 +407,28 @@ class NeoCyberApp(App[None]):
                             self.agent_runner.tools.execute_shell, cmd, _chunk_cb
                         )
                         card.set_completed(code, output, duration)
-                        tool_calls.append(
-                            ToolCall(
-                                id=tool_uid,
-                                name="bash",
-                                arguments={"command": cmd},
-                                status="completed" if code == 0 else "failed",
-                                output=output,
-                                duration=duration,
-                                exit_code=code,
-                            )
-                        )
+                        tool_results.append(f"Command '{cmd}' exit code {code}:\n{output}")
                     else:
                         card = chat.add_tool_card(tool_uid, "bash", cmd)
                         card.set_completed(1, "(Skipped by user)", 0.0)
-                        tool_calls.append(
-                            ToolCall(
-                                id=tool_uid,
-                                name="bash",
-                                arguments={"command": cmd},
-                                status="cancelled",
-                                output="(Skipped by user)",
-                                duration=0.0,
-                            )
-                        )
+                        tool_results.append(f"Command '{cmd}' was skipped by the user.")
 
-            # Step C: Record to conversation history
-            self.history.append(Message(role=Role.USER, content=prompt))
-            self.history.append(
-                Message(
-                    role=Role.ASSISTANT,
-                    content=full_resp,
-                    agent=self.agent_mode,
-                    tool_calls=tool_calls,
-                )
-            )
-            if len(self.history) > 10:
-                self.history = self.history[-10:]
+                # Feed command results back into the agentic loop for next iteration
+                if tool_results:
+                    combined_results = "\n\n".join(tool_results)
+                    current_prompt = (
+                        f"[System: Command Output from your execution]:\n{combined_results}\n\n"
+                        "Review these results. If additional commands are needed to complete the objective, output them in ```bash. "
+                        "Otherwise, provide the final answer and summary."
+                    )
+                else:
+                    break
+
+            # Update master conversation history
+            self.history = accumulated_history[-12:]
 
         except Exception as e:
-            assistant_view.update_content(f"Error executing agent: {e}")
+            chat.start_assistant_message(agent=self.agent_mode).update_content(f"Error: {e}")
         finally:
             self._is_busy = False
             status_bar.status_text = "READY"
