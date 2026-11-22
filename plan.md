@@ -1,136 +1,80 @@
-# NeoCyber — Architecture & Implementation Plan: Small Local Model Optimization & Native Bash TUI
+# NeoCyber — UI & Architecture Overhaul Plan
 
 Target workspace: `/home/xento7z/xento/test/neocyber`
-Architecture: Native Bash TUI Harness around local LLMs (1B–8B parameters served via Ollama / OpenCode).
-Core Principle: **Harness handles reliability and orchestration; small model handles intent and decision-making.**
+Goal: Restore the clean, robust OpenCode Bash wrapper layout with true live streaming and polished visual rendering.
 
 ---
 
-## 1. System Overview & Core Tenets
+## 1. Problem Diagnosis
 
-Small local models (Qwen 2.5 Coder 7B, Gemma 2, Llama 3.2 1B/3B, etc.) struggle when:
-- Complex system prompts overload their limited attention window.
-- Multi-step, verbose tool outputs are dumped raw into prompt context.
-- Arbitrary unconstrained shell commands are hallucinated.
-- Retries enter infinite loops due to parse errors.
-
-**NeoCyber solves this through:**
-1. **Harness-Driven Intelligence & Step Decomposition**: Breaks high-level user tasks into phased security milestones (Recon -> Target Scope -> Port Discovery -> Service Inspection -> Vulnerability Evaluation -> Verified Reporting).
-2. **Deterministic Typed Security Tools**: Exposes validated typed commands (e.g. `nmap` with safe defaults, `curl`, `ffuf`, file inspection) rather than forcing the model to remember complex syntax.
-3. **Context Optimization & Output Normalization**: Raw tool output (e.g. 1000 lines of nmap scan or logs) is saved to disk (`reports/`, `evidence/`), and only a structured, concise summary is passed back to the model context.
-4. **Structured JSON / Native Tool Layer with Validation & Guardrails**: Validates tool arguments against strict schemas, catches errors, provides bounded retries, and protects against scope escapes.
-5. **Real-time Native Bash TUI with Live Event Streaming**: Responsive terminal UI displaying live activities, real-time command execution boxes, progressive model output, diff viewer, and structured security findings.
-6. **Configurable Model Profiles**: Pre-tuned context limits, temperature, output token budgets, and prompt templates for small models (1B–8B).
+1. **Why the previous OpenCode wrapper felt better**:
+   - The native Bash launcher (`cfb7cd3`) used clean, authentic ANSI terminal primitives, the iconic NeoCyber cyan ASCII banner, status bars, and properly wrapped OpenCode.
+   - The recent Python REPL replacement (`61be887`) lacked the rich terminal wrapper feel, session listing, profile selection, and native launcher ergonomics.
+2. **The Markdown Glitch**:
+   - Small models output raw markdown (`## Objective`, ````bash`, etc.). When printed directly, raw hashes (`##`) and raw triple-backticks clutter the terminal.
+   - We need an unbuffered stream formatter that strips the raw markdown characters and styles them into terminal borders, clean section titles, and highlighted blocks without delaying token output.
+3. **Workspace & Model Management**:
+   - Users need immediate visibility of the active workspace (`~/xento/test/neocyber`), model profile (`qwen2.5-coder:7b`), and active agent (`cyber` vs `plan`).
+   - The launcher must provide easy switches: `--profile`, `--sessions`, `--findings`, and an interactive mode picker.
 
 ---
 
-## 2. Directory & Module Architecture
+## 2. Design Specification
 
+### Visual Layout
 ```text
-/home/xento7z/xento/test/neocyber/
-├── cyber                       # Primary executable entrypoint (Bash TUI + Orchestrator)
-├── opencode.jsonc              # OpenCode model alias & provider configuration
-├── prompt.txt                  # Baseline project contract & handoff reference
-├── README.md                   # Quickstart, keyboard shortcuts & operator guide
-├── plan.md                     # Full architectural roadmap and execution plan
-│
-├── lib/                        # Modular Bash harness libraries
-│   ├── tui.sh                  # Terminal UI: ANSI boxes, timeline, streaming, findings pane, diffs
-│   ├── orchestrator.sh         # Stage decomposer & multi-step execution loop
-│   ├── context.sh              # Context budgeter, output truncator & normalizer
-│   ├── tools.sh                # Deterministic security tool wrappers (nmap, curl, ffuf, grep, read)
-│   ├── profiles.sh             # Model profiles (Qwen 7B, Llama 3B, Gemma 2B, Custom)
-│   └── validator.sh            # Action & argument schema validator, boundary/scope guard
-│
-├── .opencode/
-│   └── agents/
-│       ├── cyber.md            # Operator agent: concise prompt, strict tool schemas
-│       └── plan.md             # Read-only planner agent: scoping & attack chains
-│
-├── config/
-│   └── profiles.json           # Profiles configuration for local models
-│
-└── reports/                    # Persisted raw tool outputs, findings, and evidence
+   ██████╗██╗   ██╗██████╗ ███████╗██████╗
+  ██╔════╝╚██╗ ██╔╝██╔══██╗██╔════╝██╔══██╗
+  ██║      ╚████╔╝ ██████╔╝█████╗  ██████╔╝
+  ██║       ╚██╔╝  ██╔══██╗██╔══╝  ██╔══██╗
+  ╚██████╗   ██║   ██████╔╝███████╗██║  ██║
+   ╚═════╝   ╚═╝   ╚═════╝ ╚══════╝╚═╝  ╚═╝
+  cybersecurity harness · model: qwen2.5-coder:7b (7B) · context: 16384t
+────────────────────────────────────────────────────────────────────────────────
+ NEOCYBER · cyber · RUNNING             PROFILE: qwen2.5-coder:7b · Ctrl+C stop 
+────────────────────────────────────────────────────────────────────────────────
+
+21:27:02 ◉  Analyzing security context...
+
+╭── AGENT RESPONSE ────────────────────────────────────────────────────────────╮
+│                                                                              │
+│  OBJECTIVE                                                                   │
+│  Check current working directory of the host.                                │
+│                                                                              │
+│  ACTION                                                                      │
+│  ┌─ sh ────────────────────────────────────────────┐                         │
+│  │  pwd                                            │                         │
+│  └─────────────────────────────────────────────────┘                         │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+21:27:06 ▶  Executing command: pwd...
+
+╭── SECURITY TOOL OUTPUT ──────────────────────────────────────────────────────╮
+│  Command : pwd                                                               │
+│  Status  : SUCCESS · Exit 0 · 0.01s                                          │
+├──────────────────────────────────────────────────────────────────────────────┤
+│   /home/xento7z/xento/test/neocyber                                          │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+────────────────────────────────────────────────────────────────────────────────
+ NEOCYBER · cyber · COMPLETED           WORKSPACE: ~/xento/test/neocyber
+────────────────────────────────────────────────────────────────────────────────
 ```
 
 ---
 
-## 3. Implementation Phases
+## 3. Step-by-Step Implementation & Single Commit Plan
 
-### Phase 1: Modular Engine & Profiles Layer
-- Create `lib/profiles.sh` and `config/profiles.json`:
-  - Profile definitions:
-    - `qwen2.5-coder:7b`: context 16384, max output 4096, native tool calling, temperature 0.2
-    - `llama3.2:3b`: context 8192, max output 2048, prompt-guided tool calling, temperature 0.1
-    - `gemma2:2b`: context 8192, max output 1500, structured JSON actions, temperature 0.2
-- Allow profile switching via CLI flag (`--profile <name>` or `./cyber --profile qwen`).
+Each step will be committed individually:
 
-### Phase 2: Context Management & Normalization Layer (`lib/context.sh`)
-- Implement automatic stdout capture and file persistence:
-  - Raw command output written to `reports/evidence/<tool>_<timestamp>.log`.
-  - Normalization filters:
-    - Nmap parser: parses open ports, services, versions into a clean JSON/key-value summary (< 200 tokens).
-    - Curl/HTTP header parser: extracts status, headers, server fingerprint.
-    - Ffuf/Dirb parser: extracts 200/301/403 discovered paths only.
-  - Ensures tool feedback returned to the model never exceeds a strict budget (default 300 tokens per action).
-
-### Phase 3: Deterministic Security Tool Wrappers & Validator (`lib/tools.sh`, `lib/validator.sh`)
-- Define typed security operations:
-  - `tool_scan_target [target] [port_range] [scan_type]`
-  - `tool_probe_http [url] [method] [headers]`
-  - `tool_enum_paths [url] [wordlist]`
-  - `tool_inspect_file [path] [pattern]`
-  - `tool_write_finding [title] [severity] [evidence_file] [remediation]`
-- Scope validation:
-  - Enforce target CIDR / domain boundaries. Reject attempts to target unlisted hosts.
-  - Prevent destructive flags (`rm -rf`, format commands, broad denial-of-service).
-- Validation and bounded retry:
-  - Max 3 retries on malformed JSON / argument syntax with explicit one-line error feedback.
-
-### Phase 4: Stage Decomposition & Orchestrator (`lib/orchestrator.sh`)
-- Automatic task breakdown:
-  - When user submits a high-level security goal (e.g., "Assess local service on port 8080"):
-    - Step 1: Recon & Scope Confirmation
-    - Step 2: Port & Service Fingerprinting
-    - Step 3: Attack Surface & Config Review
-    - Step 4: Verification of Specific Vectors
-    - Step 5: Report Generation
-- Feeds only the *current step* to the model, avoiding multi-page distraction and drift.
-
-### Phase 5: Native Bash TUI Redesign (`lib/tui.sh` & `cyber`)
-- Terminal layout & visual design:
-  - Dark, minimalist technical aesthetic (Cyan/Green/Amber/Red, monospaced, UTF-8 box drawing with ASCII fallback).
-  - Top status bar: Model, Active Profile, Context Budget, Target Scope, State (IDLE/RUNNING/ANALYZING).
-  - Main display panels:
-    - **Live Activity Timeline**: Real-time progress markers (`◉ Active`, `✓ Completed`, `✗ Error`).
-    - **Live Command Execution Box**: Progressive stdout/stderr streaming, duration, exit code.
-    - **Streaming Assistant Text**: Token streaming with live Markdown formatting.
-    - **File Diff Viewer**: Native unified diff viewer with added/removed color highlights for file changes.
-    - **Structured Findings Panel**: Visual severity badges (CRITICAL, HIGH, MEDIUM, LOW, INFO) with expandable details.
-- Keyboard navigation:
-  - `Ctrl+C`: Gracefully cancel current task / subprocess without terminating the session.
-  - `Ctrl+N`: Start new session.
-  - `Ctrl+E`: Toggle inspector / findings overlay.
-  - `Tab`: Cycle modes / sections.
-
-### Phase 6: Agent Prompts & OpenCode Optimization
-- Update `.opencode/agents/cyber.md` and `plan.md`:
-  - Optimize for 1B–8B attention limits: eliminate verbose prose, enforce strict JSON / tool format.
-  - Include deterministic action schemas and clear scope boundaries.
-- Keep token footprint of prompt under 500 tokens.
-
-### Phase 7: Verification & Acceptance Testing
-- Run end-to-end security workflows:
-  1. Profile loading & switching test (`./cyber --profile qwen2.5-coder:7b`).
-  2. Scope guardrail test (ensure out-of-scope targets are blocked by the validator).
-  3. Output normalization test (verify large scan outputs are stored to disk and summarized to <300 tokens).
-  4. Real-time TUI streaming and tool box test with live commands.
-  5. File modification and diff viewer test.
-  6. Structured finding persistence test (`reports/findings.json`).
-
----
-
-## 4. Backout & Safety Strategy
-- Maintain backward compatibility: `./cyber cyber --run "<prompt>"` continues to work.
-- Modular library structure ensures scripts can be tested individually with unit shell tests.
-- All persistent data confined to `reports/`, `config/`, and `.opencode/`.
+- [ ] **Step 1**: Clean unneeded files and write detailed architecture plan to `plan.md`.
+  - *Commit 1: `docs: update plan.md with detailed terminal UI and streaming overhaul`*
+- [ ] **Step 2**: Enhance `lib/tui.sh` with clean stream-cleaning primitives (strip raw `##` and backticks, convert into styled box lines and clean headings).
+  - *Commit 2: `feat(tui): enhance streaming markdown formatter and styled result boxes in lib/tui.sh`*
+- [ ] **Step 3**: Overhaul `lib/engine.py` to stream tokens in real time while formatting text dynamically without raw markdown noise, and executing tools cleanly.
+  - *Commit 3: `feat(engine): real-time stream formatter removing raw markdown clutter`*
+- [ ] **Step 4**: Restore the primary `cyber` launcher script to integrate profile switching (`--profile`), session tracking (`--sessions`), findings dashboard (`--findings`), and the mode picker.
+  - *Commit 4: `feat(launcher): restore cyber bash wrapper with full profile and workspace controls`*
+- [ ] **Step 5**: Update `README.md` with complete documentation of features, shortcuts, model changing, and usage instructions.
+  - *Commit 5: `docs: update README with usage, model profiles, and terminal UI controls`*
