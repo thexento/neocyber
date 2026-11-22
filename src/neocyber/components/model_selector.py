@@ -20,16 +20,16 @@ class ModelSelector(ModalScreen[str | None]):
     DEFAULT_CSS = """
     ModelSelector {
         align: center middle;
-        background: rgba(0, 0, 0, 0.7);
+        background: rgba(0, 0, 0, 0.75);
     }
     #selector-container {
-        width: 72;
+        width: 70;
         max-width: 90%;
         height: auto;
-        max-height: 24;
+        max-height: 22;
         background: #18181b;
         border: round #38bdf8;
-        padding: 1;
+        padding: 1 2;
     }
     #selector-title {
         color: #38bdf8;
@@ -37,13 +37,13 @@ class ModelSelector(ModalScreen[str | None]):
         margin-bottom: 1;
     }
     #selector-list {
-        background: #18181b;
-        height: 14;
-        border: none;
+        background: #111113;
+        border: round #27272a;
+        height: 12;
+        margin-bottom: 1;
     }
     #selector-hint {
         color: #71717a;
-        margin-top: 1;
         text-align: center;
     }
     """
@@ -65,22 +65,29 @@ class ModelSelector(ModalScreen[str | None]):
 
     def compose(self) -> ComposeResult:
         with Vertical(id="selector-container"):
-            yield Static("❯ SELECT MODEL PROFILE (Local Ollama)", id="selector-title")
+            yield Static("❯ SETTINGS: SELECT LOCAL MODEL", id="selector-title")
             yield OptionList(id="selector-list")
-            yield Static("Enter: Select · Esc: Cancel", id="selector-hint")
+            yield Static("Enter: Select Model · Up/Down: Navigate · Esc: Cancel", id="selector-hint")
 
     def on_mount(self) -> None:
         opt_list = self.query_one("#selector-list", OptionList)
+        opt_list.clear_options()
+
+        active_idx = 0
+        idx = 0
         for name, p in self.profiles.items():
             is_active = (name == self.active_profile)
-            badge = " [ACTIVE]" if is_active else ""
+            if is_active:
+                active_idx = idx
+            badge = "  [ACTIVE]" if is_active else ""
             label = Text.assemble(
                 (f"{name:<20}", "bold #38bdf8" if is_active else "bold #f4f4f5"),
                 (f" ({p.param_size})", "dim #a1a1aa"),
-                (f"  ctx: {p.context_budget}t", "#71717a"),
+                (f"  ctx: {p.context_budget}t", "dim #71717a"),
                 (badge, "bold #10b981" if is_active else ""),
             )
             opt_list.add_option(Option(prompt=label, id=name))
+            idx += 1
 
         # Add detected unconfigured Ollama models if any
         configured_names = {p.ollama_name for p in self.profiles.values()}
@@ -93,10 +100,11 @@ class ModelSelector(ModalScreen[str | None]):
                 )
                 opt_list.add_option(Option(prompt=label, id=mname))
 
+        opt_list.highlighted = active_idx
         opt_list.focus()
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
-        self.dismiss(event.option_id)
+        self.dismiss(str(event.option_id))
 
     def action_dismiss_modal(self) -> None:
         self.dismiss(None)
