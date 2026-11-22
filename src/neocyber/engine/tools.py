@@ -8,7 +8,7 @@ import re
 import shlex
 import subprocess
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 
@@ -225,7 +225,8 @@ class ToolExecutor:
         evidence_file: str = "",
         remediation: str = "",
     ) -> Dict[str, Any]:
-        finding_id = f"FIND-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
+        now_utc = datetime.now(timezone.utc)
+        finding_id = f"FIND-{now_utc.strftime('%Y%m%d%H%M%S')}"
         finding = {
             "id": finding_id,
             "title": title,
@@ -234,7 +235,7 @@ class ToolExecutor:
             "description": description,
             "evidence_file": evidence_file,
             "remediation": remediation,
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": now_utc.isoformat(),
             "verified": True,
         }
 

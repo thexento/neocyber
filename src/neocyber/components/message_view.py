@@ -93,21 +93,21 @@ class MessageView(Widget):
 
         if self.role == Role.USER:
             container_class = "user-block"
-            author_class = "user"
             author_title = "❯ YOU"
+            author_style = "bold #22d3ee"
         elif self.agent == "plan":
             container_class = "plan-block"
-            author_class = "plan"
             author_title = "◆ PLAN [planner]"
+            author_style = "bold #f59e0b"
         else:
             container_class = "assistant-block"
-            author_class = "cyber"
             author_title = "◆ CYBER [operator]"
+            author_style = "bold #38bdf8"
 
         with Vertical(classes=container_class):
             yield Static(
                 Text.assemble(
-                    (author_title, f"bold {author_class}"),
+                    (author_title, author_style),
                     ("  " + ts_str, "dim #52525b"),
                 ),
                 classes="msg-header-row",
