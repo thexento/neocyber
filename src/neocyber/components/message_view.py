@@ -22,53 +22,39 @@ class MessageView(Widget):
     MessageView {
         width: 100%;
         height: auto;
-        margin-bottom: 1;
+        margin: 0 0 1 0;
+        padding: 0;
     }
     .msg-header-row {
         height: 1;
         width: 100%;
         layout: horizontal;
         margin-bottom: 0;
-    }
-    .msg-author {
-        text-style: bold;
-        width: auto;
-    }
-    .msg-author.user {
-        color: #22d3ee;
-    }
-    .msg-author.cyber {
-        color: #38bdf8;
-    }
-    .msg-author.plan {
-        color: #f59e0b;
-    }
-    .msg-time {
-        color: #52525b;
-        text-style: italic;
-        margin-left: 2;
-        width: auto;
+        padding: 0;
     }
     .msg-body {
         width: 100%;
         height: auto;
-        padding-left: 2;
+        padding-left: 1;
         margin-top: 0;
     }
     .user-block {
-        border-left: wide #22d3ee;
+        border-left: solid #22d3ee;
         background: #18181b;
         padding: 0 1;
+        margin: 0;
     }
     .assistant-block {
-        border-left: wide #0284c7;
+        border-left: solid #38bdf8;
         background: #141416;
         padding: 0 1;
+        margin: 0;
     }
     .plan-block {
-        border-left: wide #d97706;
-        background: #161514;
+        border-left: solid #f59e0b;
+        background: #151517;
         padding: 0 1;
+        margin: 0;
     }
     """
 
@@ -97,18 +83,18 @@ class MessageView(Widget):
             author_style = "bold #22d3ee"
         elif self.agent == "plan":
             container_class = "plan-block"
-            author_title = "◆ PLAN [planner]"
+            author_title = "✦ PLAN"
             author_style = "bold #f59e0b"
         else:
             container_class = "assistant-block"
-            author_title = "◆ CYBER [operator]"
+            author_title = "✦ CYBER"
             author_style = "bold #38bdf8"
 
         with Vertical(classes=container_class):
             yield Static(
                 Text.assemble(
                     (author_title, author_style),
-                    ("  " + ts_str, "dim #52525b"),
+                    (f"  {ts_str}", "dim #52525b"),
                 ),
                 classes="msg-header-row",
             )
@@ -119,9 +105,10 @@ class MessageView(Widget):
             )
 
     def _format_content(self, text: str):
+        if not text:
+            return Text("")
         if self.role == Role.USER:
             return Text(text, style="#f4f4f5")
-        # For assistant, render rich markdown
         try:
             return Markdown(text)
         except Exception:
