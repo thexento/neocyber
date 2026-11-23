@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import os
+import shutil
 import sys
 
 from neocyber.app import NeoCyberApp
@@ -28,13 +29,20 @@ def run_headless(agent_name: str, task: str, profile_name: str, workspace: str) 
         sys.stdout.flush()
 
     def _on_tool_start(tid: str, cmd: str) -> None:
-        print(f"\n\n▶ Executing: {cmd}...")
+        width = min(shutil.get_terminal_size((80, 24)).columns - 4, 82)
+        print(f"\n  {'─' * width}")
+        print(f"  ▶ Executing: {cmd} ...")
+        print(f"  {'─' * width}")
+
+    def _on_tool_chunk(tid: str, chunk: str) -> None:
+        sys.stdout.write(chunk)
+        sys.stdout.flush()
 
     def _on_tool_complete(tid: str, code: int, out: str, dur: float) -> None:
         status = "SUCCESS" if code == 0 else f"FAILED (exit {code})"
-        print(f"[{status} · {dur}s]")
+        print(f"\n  [{status} · {dur}s]")
         if out.strip():
-            print(out)
+            print(out.rstrip())
         print()
 
     async def _run():
@@ -45,6 +53,7 @@ def run_headless(agent_name: str, task: str, profile_name: str, workspace: str) 
             user_prompt=task,
             on_token=_on_token,
             on_tool_start=_on_tool_start,
+            on_tool_chunk=_on_tool_chunk,
             on_tool_complete=_on_tool_complete,
         )
 
@@ -89,6 +98,12 @@ def main() -> None:
         action="store_true",
         help="Show security findings dashboard",
     )
+    parser.add_argument(
+        "--no-mouse",
+        action="store_true",
+        default=False,
+        help="Disable mouse capture in the terminal (by default mouse is enabled for natural mouse-wheel chat scrolling)",
+    )
 
     args = parser.parse_args()
     workspace = os.getcwd()
@@ -129,7 +144,7 @@ def main() -> None:
         initial_agent=args.mode,
         initial_profile=chosen_profile,
     )
-    app.run()
+    app.run(mouse=not args.no_mouse)
 
 
 if __name__ == "__main__":

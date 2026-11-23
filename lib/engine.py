@@ -48,6 +48,16 @@ def type_writer(text, delay=0.012):
     sys.stdout.write("\n")
     sys.stdout.flush()
 
+def extract_first_bash_block(text):
+    """
+    Return at most ONE bash block from the model text — guarantees one command
+    per turn so execution stays interactive (announce → run → analyze → next).
+    """
+    blocks = re.findall(r"```(?:bash|sh|shell)?\s*[\r\n]+(.*?)```", text, re.DOTALL)
+    clean = [b.strip() for b in blocks if b.strip() and not b.lstrip().startswith(("{", "<", "["))]
+    return clean[:1]
+
+
 def format_token_stream(token, state):
     """
     Format token stream on the fly:
@@ -172,54 +182,71 @@ def stream_chat(model_name, system_prompt, user_prompt, conversation_history=Non
     type_writer(f"Analyzing security context with {model_name}...", delay=0.012)
     print()
 
-    full_response = ""
-    stream_state = {'buffer': '', 'in_code': False}
-    try:
-        with urllib.request.urlopen(req, timeout=120) as resp:
-            for line in resp:
-                if not line:
-                    continue
-                data = json.loads(line.decode("utf-8"))
-                chunk = data.get("message", {}).get("content", "")
-                if chunk:
-                    full_response += chunk
-                    formatted = format_token_stream(chunk, stream_state)
-                    if formatted:
-                        sys.stdout.write(formatted)
-                        sys.stdout.flush()
-
-                if data.get("done", False):
-                    break
-
+    def _stream_once(msgs):
+        """Stream one model response and return the full text."""
+        payload["messages"] = msgs
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+        )
+        out = ""
+        stream_state = {'buffer': '', 'in_code': False}
+        try:
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                for line in resp:
+                    if not line:
+                        continue
+                    data = json.loads(line.decode("utf-8"))
+                    chunk = data.get("message", {}).get("content", "")
+                    if chunk:
+                        out += chunk
+                        formatted = format_token_stream(chunk, stream_state)
+                        if formatted:
+                            sys.stdout.write(formatted)
+                            sys.stdout.flush()
+                    if data.get("done", False):
+                        break
+        except urllib.error.URLError as e:
+            print(f"\n  {RED}Error connecting to Ollama: {e}{RESET}\n")
+            return out
         if stream_state['buffer']:
             clean = stream_state['buffer'].strip()
             if clean and not clean.startswith("```"):
                 sys.stdout.write(f"  {clean}\n")
                 sys.stdout.flush()
+        return out
 
-    except urllib.error.URLError as e:
-        print(f"\n  {RED}Error connecting to Ollama: {e}{RESET}\n")
-        return full_response
+    full_response = _stream_once(messages)
 
-    # Inspect for executable shell blocks inside the response
-    lines = full_response.splitlines()
-    i = 0
-    commands = []
-    while i < len(lines):
-        line = lines[i].strip()
-        if line.startswith("```bash") or line.startswith("```sh") or line.startswith("```shell"):
-            cmd_lines = []
-            i += 1
-            while i < len(lines) and not lines[i].strip().startswith("```"):
-                cmd_lines.append(lines[i].strip())
-                i += 1
-            potential_cmd = " && ".join([c for c in cmd_lines if c and not c.startswith("#")])
-            if potential_cmd:
-                commands.append(potential_cmd)
-        i += 1
+    # Step-by-step execution: run ONE proposed bash block, feed its real output
+    # back to the model, and let it analyze + propose the next test — until the
+    # model emits no command block (then it gives its final report).
+    for _ in range(6):
+        commands = extract_first_bash_block(full_response)
+        if not commands:
+            break
 
-    for cmd in commands:
-        execute_command_live(cmd)
+        cmd = commands[0]
+        # Never run destructive / flood actions autonomously
+        if re.search(r"\bsudo\b|\bdoas\b|\bsu\b|rm\s+-|mkfs|dd\s+if=|hping3|--flood", cmd):
+            print(f"\n  {RED}Refused to run autonomously (approve manually): {cmd}{RESET}\n")
+            break
+
+        output = execute_command_live(cmd)
+
+        follow_up = (
+            f"Here is the real output of running: $ {cmd}\n\n"
+            f"{output}\n\n"
+            f"INSTRUCTIONS: Analyze the output above using only facts from it. Then run your "
+            f"next single diagnostic test as exactly one bash block, OR, if testing is "
+            f"complete, give your final Security Assessment & Remediation Report with "
+            f"severity ratings ([CRITICAL]/[HIGH]/[MEDIUM]/[LOW]/[INFO]) and remediation "
+            f"steps. Output NO bash blocks in the final report."
+        )
+        messages.append({"role": "assistant", "content": full_response})
+        messages.append({"role": "user", "content": follow_up})
+        full_response = _stream_once(messages)
 
     return full_response
 
