@@ -1,121 +1,142 @@
 # NeoCyber
 
-> Elite Cybersecurity AI Agent Harness with an authentic OpenCode-grade Terminal User Interface (TUI), built specifically for small local models (1B–8B) served by Ollama.
+NeoCyber is a cybersecurity AI agent harness with a terminal user interface, built for small local models served by Ollama. It recreates the interaction style of OpenCode, including real-time token streaming, styled tool execution cards, and an iterative agent loop that runs security diagnostics one step at a time.
 
-NeoCyber recreates the visual language, interaction patterns, and responsiveness of **OpenCode** — including full-screen terminal rendering, real-time token streaming without raw markdown clutter, styled tool execution cards, color-coded unified diffs, and an interactive command palette.
+## Purpose
 
----
+NeoCyber helps operators and security engineers perform authorized security audits and diagnostics against targets they own or have explicit permission to assess. The harness works step by step: it announces a single test, runs one command, analyzes the real output, then decides the next test or produces a final remediation report.
 
-## ⚡ Key Highlights
+## Features
 
-- **OpenCode TUI Experience**: Built with Textual (Python's Bubble Tea equivalent) featuring deep dark surfaces, crisp typography, responsive layout adaptation, and zero terminal flickering.
-- **Genuine Live Streaming**: Token-by-token streaming from local Ollama endpoints with incremental markdown rendering and auto-scroll pinning.
-- **In-Place Tool Execution**: Shell commands, recon scanners, and scripts run inside styled cards with live status badges (`[RUNNING]`, `[SUCCESS]`, `[FAILED]`), duration timers, and output viewports.
-- **Color-Coded Diffs**: File modifications generate unified diffs with green additions (`+`) and red deletions (`-`).
-- **Cybersecurity Operator Focus**:
-  - `cyber`: Full operator with shell execution, tool chaining, file read/write/edit, and vulnerability verification.
-  - `plan`: Read-only threat modeler for attack surface mapping and exploit chains without execution.
-- **Small Model Optimized**: Context normalization for 1B–8B models (Qwen2.5-Coder 7B, Llama 3.2 3B, Gemma 2 2B) automatically truncates large scan outputs and archives raw logs to `reports/evidence/`.
-- **Scope & Guardrails**: Prevents destructive commands and restricts scans to authorized targets.
-- **Direct Shell Triggers**: Prefix any prompt with `!` to immediately run shell commands in an execution card without model inference (e.g. `!uname -a`, `!nmap localhost`).
+- Terminal user interface built with Textual, with dark surfaces and responsive layout.
+- Real-time token streaming from local Ollama endpoints.
+- Styled tool execution cards showing command, status, duration, and live output.
+- Stateful agent loop with a task plan, observations, bounded step budget, and execution ledger.
+- Duplicate command detection to prevent repeated executions.
+- Persistent sessions saved in `.neocyber/session.json` and restored on restart.
+- Security findings stored in `reports/findings.json` with raw evidence in `reports/evidence/`.
+- Direct shell trigger: prefix a prompt with `!` to run a command immediately.
+- Two agent modes: `cyber` (operator with shell execution) and `plan` (read-only threat modeler).
+- Scope guardrails that restrict scans to authorized targets.
+- Refusal to run denial-of-service or flood tooling autonomously.
 
----
+## Quickstart
 
-## 🚀 Quickstart
+Launch the interactive terminal interface:
 
-Launch the interactive TUI:
-```bash
+```
 ./cyber
 ```
 
-Launch directly into a specific agent persona:
-```bash
-./cyber cyber      # Operator mode
-./cyber plan       # Threat modeler mode
+Launch directly into a specific agent mode:
+
+```
+./cyber cyber
+./cyber plan
 ```
 
-### Direct Headless Execution (`--run`)
-Stream execution directly in your terminal for single tasks:
-```bash
-./cyber --run "Check system info with uname -a and uptime"
-./cyber plan --run "Audit workspace files for sensitive configs"
+Run a single task headlessly with streaming output:
+
+```
+./cyber --run "Check system information with uname -a and uptime"
+./cyber plan --run "Audit workspace files for sensitive configurations"
 ```
 
----
+List available model profiles:
 
-## ⌨️ Keyboard Shortcuts & Controls
-
-| Shortcut | Action | Description |
-|---|---|---|
-| `Ctrl+P` | **Command Palette** | Search and trigger commands (`/cyber`, `/plan`, `/models`, `/findings`, `/clear`, `/help`, `/quit`) |
-| `Tab` | **Switch Agent** | Toggle between **CYBER** (operator) and **PLAN** (planner) |
-| `Ctrl+X` then `M` | **Model Selector** | Browse local Ollama models and switch active model profile |
-| `F2` | **Cycle Models** | Quickly cycle through configured model profiles |
-| `Escape` | **Cancel / Stop** | Stop ongoing model generation or running tool execution |
-| `Enter` | **Submit Prompt** | Send message to agent (`Shift+Enter` for multi-line) |
-| `Up` / `Down` | **History** | Navigate previous prompt history at top/bottom of input |
-| `?` | **Help Overlay** | View complete quick reference modal |
-| `Ctrl+C` | **Exit** | Gracefully quit NeoCyber |
-
----
-
-## 🎯 Special Commands & Prefixes
-
-Type directly in the prompt input:
-
-- **`!<command>`**: Run direct shell command immediately.
-  ```text
-  !ip a
-  !nmap -sT 127.0.0.1
-  !cat /etc/os-release
-  ```
-- **`/cyber`**: Switch to Operator mode.
-- **`/plan`**: Switch to Planner mode.
-- **`/models`**: Open model picker dialog.
-- **`/findings`**: Open security findings dashboard.
-- **`/clear`**: Clear conversation transcript.
-- **`/help`**: Show help modal.
-- **`/quit`**: Exit NeoCyber.
-
----
-
-## 🤖 Supported Local Models & Profiles
-
-Configured in `config/profiles.json`:
-
-| Profile | Parameter Size | Context Window | Default For |
-|---|---|---|---|
-| `qwen2.5-coder:7b` | 7B | 16,384 tokens | Default Operator (high tool accuracy) |
-| `llama3.2:3b` | 3B | 8,192 tokens | Fast lightweight local operator |
-| `gemma2:2b` | 2B | 8,192 tokens | Ultra-lightweight local model |
-
-List all profiles:
-```bash
+```
 ./cyber --profiles
 ```
 
-Switch profile from CLI:
-```bash
+Show recorded security findings:
+
+```
+./cyber --findings
+```
+
+## Security Audit Workflow
+
+When you request a security audit or assessment, NeoCyber operates like a real operator, one test per turn:
+
+1. It announces the single test it is running right now, for example "First, I will check whether the host is reachable."
+2. It runs exactly one non-destructive diagnostic command and streams the output live.
+3. Only after the command finishes does it analyze the actual output.
+4. Based on that result, it runs the next single test, or delivers a final Security Assessment and Remediation Report.
+
+The final report lists each test performed and its factual outcome, groups findings by severity (Critical, High, Medium, Low, Informational), and ends with a remediation playbook containing exact code or configuration fixes.
+
+Example:
+
+```
+./cyber --run "Perform a security audit of http://127.0.0.1:3000/"
+```
+
+## Target Scope and Authorization
+
+By default, NeoCyber only authorizes tests against localhost and private IP ranges (10.x, 192.168.x, 172.16.x through 172.31.x). To test another target that you own or have explicit written permission to assess, add its host or IP address to `target.txt` in the workspace:
+
+```
+echo "130.162.198.13" >> target.txt
+```
+
+Only run audits against targets you are authorized to test. NeoCyber will not autonomously run denial-of-service or flood tooling such as hping3 floods. Those commands require your explicit manual execution.
+
+## Supported Commands and Shortcuts
+
+Inside the interactive TUI:
+
+- `!<command>`: run a shell command immediately, for example `!ip a` or `!nmap -sT 127.0.0.1`.
+- `/cyber`: switch to Operator mode.
+- `/plan`: switch to Planner mode.
+- `/models` or `/model`: open the model picker dialog.
+- `/findings`: open the security findings dashboard.
+- `/clear`: clear the conversation transcript.
+- `/help`: show the help overlay.
+- `/quit` or `/exit`: exit NeoCyber.
+
+Keyboard shortcuts:
+
+- Ctrl+P: open the command palette.
+- Tab: switch between Cyber Operator and Plan modes.
+- Ctrl+M or F2: open the model selector.
+- Escape: cancel the current action or stop execution.
+- Enter: submit a prompt. Shift+Enter for multi-line input.
+- Up / Down: navigate prompt history.
+- ?: open the help overlay.
+- Ctrl+C: quit the application.
+
+## Model Profiles
+
+Model profiles are configured in `config/profiles.json`. The default profile is `qwen2.5-coder:7b`.
+
+| Profile | Parameter Size | Context Window | Intended Use |
+|---------|----------------|----------------|--------------|
+| qwen2.5-coder:7b | 7B | 16384 tokens | Default operator with high tool accuracy |
+| llama3.2:3b | 3B | 16384 tokens | Fast lightweight local operator |
+| gemma2:2b | 2B | 16384 tokens | Ultra-lightweight local model |
+
+Switch profile from the command line:
+
+```
 ./cyber --profile llama3.2:3b
 ```
 
----
+## Safety and Guardrails
 
-## 🛡️ Security Findings & Evidence
+- Destructive system commands such as recursive removal, disk formatting, and raw disk writes are rejected.
+- Full internet range scans are prohibited.
+- Sudo, doas, and su commands are not run autonomously. The harness prints the exact command for you to run manually if elevation is required.
+- Denial-of-service and flood tooling such as hping3 is never run autonomously.
+- Targets outside the authorized scope are blocked unless added to `target.txt`.
 
-Recorded findings are stored in `reports/findings.json` and raw scan outputs are saved in `reports/evidence/`.
+## Tests
 
-Inspect findings via CLI:
-```bash
-./cyber --findings
+Run the test suite with:
+
 ```
-Or use the `/findings` command inside the interactive TUI.
-
----
-
-## 🧪 Running Tests
-
-Run the comprehensive unit and integration test suite:
-```bash
 .venv/bin/pytest tests/
 ```
+
+## License
+
+This project is provided for authorized security testing and diagnostics only. Users are responsible for ensuring they have permission to test any target.
