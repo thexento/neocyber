@@ -22,8 +22,8 @@ class CommandPalette(ModalScreen[str | None]):
         background: rgba(0, 0, 0, 0.75);
     }
     #palette-container {
-        width: 72;
-        max-width: 90%;
+        width: 76;
+        max-width: 92%;
         height: auto;
         max-height: 24;
         background: #18181b;
@@ -63,20 +63,18 @@ class CommandPalette(ModalScreen[str | None]):
     def __init__(self, profiles: Optional[Dict[str, Any]] = None) -> None:
         super().__init__()
         self.commands: List[Tuple[str, str, str, str]] = [
-            ("/models", "⚙ Switch Model...", "Browse & select active Ollama model", "settings switch model ollama provider change"),
-            ("/cyber", "Switch to Cyber Operator Mode", "Full operator: shell, tools, read/write", "agent mode cyber execute operator"),
-            ("/plan", "Switch to Plan Mode", "Threat modeler & attack chain planner (read-only)", "agent mode plan planner threat"),
+            ("switch_model", "⚙ Switch Model...", "Browse & select active Ollama model (Ctrl+M)", "switch model settings change ollama provider select"),
+            ("/cyber", "Switch to Cyber Operator Mode", "Full operator: shell, diagnostics, tools (Tab)", "agent mode cyber execute operator"),
+            ("/plan", "Switch to Plan Mode", "Threat modeler & architecture planner (read-only) (Tab)", "agent mode plan planner threat"),
             ("/findings", "Security Findings Dashboard", "Inspect discovered vulnerabilities and evidence", "findings vulns security evidence report"),
-            ("/clear", "Clear Screen", "Reset current conversation transcript", "clear reset wipe screen"),
-            ("/help", "Keyboard Shortcuts & Help", "View complete reference of keys and features", "help shortcuts docs info"),
+            ("/clear", "Clear Screen", "Reset conversation transcript", "clear reset wipe screen"),
+            ("/help", "Keyboard Shortcuts & Guide", "View complete key reference and features (?)", "help shortcuts docs info"),
             ("/quit", "Exit NeoCyber", "Close terminal session", "quit exit close stop"),
         ]
-        # Include all locally discovered Ollama models directly in list
         if profiles:
             for pname, pdata in profiles.items():
-                self.commands.insert(
-                    1,
-                    (f"/model {pname}", f"Model: {pname}", f"Switch active LLM ({getattr(pdata, 'param_size', 'Local')})", f"model switch {pname} ollama settings"),
+                self.commands.append(
+                    (f"/model {pname}", f"Model: {pname}", f"Quickly activate {pname} ({getattr(pdata, 'param_size', 'Local')})", f"model switch {pname} ollama settings"),
                 )
 
         self._current_filtered: List[Tuple[str, str, str, str]] = list(self.commands)
@@ -84,7 +82,7 @@ class CommandPalette(ModalScreen[str | None]):
     def compose(self) -> ComposeResult:
         with Vertical(id="palette-container"):
             yield Static("❯ COMMAND PALETTE & SETTINGS", id="palette-title")
-            yield Input(placeholder="Type command (e.g. 'models', 'settings', 'cyber')...", id="palette-input")
+            yield Input(placeholder="Type command (e.g. 'switch model', 'settings', 'cyber')...", id="palette-input")
             yield OptionList(id="palette-list")
             yield Static("Enter: Select · Up/Down: Navigate · Esc: Close", id="palette-hint")
 
@@ -98,9 +96,8 @@ class CommandPalette(ModalScreen[str | None]):
         opt_list.clear_options()
         for cmd, title, desc, _ in items:
             label = Text.assemble(
-                (f"{cmd:<20}", "bold #22d3ee"),
-                (f"{title} ", "bold #f4f4f5"),
-                (f"— {desc}", "dim #71717a"),
+                (f"{title:<30}", "bold #22d3ee"),
+                (f" {desc}", "dim #a1a1aa"),
             )
             opt_list.add_option(Option(prompt=label, id=cmd))
         if items:
@@ -120,7 +117,6 @@ class CommandPalette(ModalScreen[str | None]):
         self._populate_list(filtered)
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
-        """When Enter is pressed inside the search input, select the highlighted option."""
         opt_list = self.query_one("#palette-list", OptionList)
         if opt_list.highlighted is not None and 0 <= opt_list.highlighted < len(self._current_filtered):
             selected_cmd = self._current_filtered[opt_list.highlighted][0]

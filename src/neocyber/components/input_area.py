@@ -47,29 +47,41 @@ class PromptTextArea(TextArea):
             self.post_message(InputArea.TabPressed())
             return
 
-        # PageUp / PageDown / Ctrl+Up / Ctrl+Down -> Scroll the chat viewport!
-        if event.key == "pageup":
+        # Scrolling shortcuts to navigate chat while typing
+        if event.key in ("pageup", "shift+pageup"):
             event.stop()
             event.prevent_default()
             self.post_message(InputArea.ScrollChat("pageup"))
             return
 
-        if event.key == "pagedown":
+        if event.key in ("pagedown", "shift+pagedown"):
             event.stop()
             event.prevent_default()
             self.post_message(InputArea.ScrollChat("pagedown"))
             return
 
-        if event.key in ("ctrl+up", "ctrl+k"):
+        if event.key in ("ctrl+up", "ctrl+k", "shift+up", "alt+up"):
             event.stop()
             event.prevent_default()
             self.post_message(InputArea.ScrollChat("up"))
             return
 
-        if event.key in ("ctrl+down", "ctrl+j") and self.text == "":
+        if event.key in ("ctrl+down", "ctrl+j", "shift+down", "alt+down"):
             event.stop()
             event.prevent_default()
             self.post_message(InputArea.ScrollChat("down"))
+            return
+
+        if event.key in ("ctrl+home", "alt+home"):
+            event.stop()
+            event.prevent_default()
+            self.post_message(InputArea.ScrollChat("home"))
+            return
+
+        if event.key in ("ctrl+end", "alt+end"):
+            event.stop()
+            event.prevent_default()
+            self.post_message(InputArea.ScrollChat("end"))
             return
 
         # Up arrow at the very top line cycles history backwards

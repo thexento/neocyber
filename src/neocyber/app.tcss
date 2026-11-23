@@ -1,7 +1,7 @@
-/* NeoCyber TUI — Modern Terminal Styling */
+/* NeoCyber TUI — Minimalistic Terminal Styling */
 
 Screen {
-    background: #121214;
+    background: #0d0d0f;
     color: #f4f4f5;
     layout: vertical;
 }
@@ -10,8 +10,8 @@ Screen {
 #header-bar {
     dock: top;
     height: 1;
-    background: #18181b;
-    color: #a1a1aa;
+    background: #141416;
+    color: #71717a;
     padding: 0 1;
     layout: horizontal;
 }
@@ -23,7 +23,7 @@ Screen {
 }
 
 #header-context {
-    color: #71717a;
+    color: #52525b;
     width: 1fr;
     text-align: right;
 }
@@ -31,14 +31,14 @@ Screen {
 /* ── Conversation Area ── */
 #chat-scroll, ChatArea {
     height: 1fr;
-    background: #121214;
+    background: #0d0d0f;
     overflow-y: scroll;
     padding: 0 1;
     scrollbar-size-vertical: 1;
-    scrollbar-color: #27272a #121214;
+    scrollbar-color: #27272a #0d0d0f;
 }
 
-/* ── Messages & Spacing (Antigravity-style clean stream) ── */
+/* ── Messages & Spacing ── */
 MessageView {
     width: 100%;
     height: auto;
@@ -60,6 +60,7 @@ MessageView {
     width: 100%;
     margin-top: 0;
     padding-left: 2;
+    color: #e4e4e7;
 }
 
 .assistant-author-badge {
@@ -81,21 +82,21 @@ ToolExecutionCard {
     width: 100%;
     height: auto;
     margin: 0 0 1 0;
-    background: #141416;
-    border: round #27272a;
+    background: #111113;
+    border-left: tall #38bdf8;
     padding: 0 1;
 }
 
 ToolExecutionCard.status-running {
-    border: round #0284c7;
+    border-left: tall #38bdf8;
 }
 
 ToolExecutionCard.status-completed {
-    border: round #059669;
+    border-left: tall #10b981;
 }
 
 ToolExecutionCard.status-failed {
-    border: round #dc2626;
+    border-left: tall #ef4444;
 }
 
 .tool-header-row {
@@ -129,7 +130,7 @@ ToolExecutionCard.status-failed {
 
 .tool-output-scroll {
     color: #d4d4d8;
-    background: #0d0d0f;
+    background: #09090b;
     padding: 0 1;
     margin-top: 0;
     height: auto;
@@ -142,7 +143,7 @@ DiffView {
     width: 100%;
     height: auto;
     margin: 0 0 1 0;
-    background: #0d0d0f;
+    background: #111113;
     border: round #27272a;
     padding: 0 1;
 }
@@ -164,14 +165,14 @@ InputArea {
     height: auto;
     min-height: 3;
     max-height: 8;
-    background: #121214;
+    background: #0d0d0f;
     padding: 0 1;
     margin-bottom: 0;
 }
 
 .input-frame {
-    border: round #3f3f46;
-    background: #18181b;
+    border: round #27272a;
+    background: #141416;
     height: auto;
     min-height: 3;
     max-height: 8;
@@ -187,7 +188,7 @@ InputArea {
     height: auto;
     min-height: 2;
     max-height: 6;
-    background: #18181b;
+    background: #141416;
     border: none;
     padding: 0 1;
 }
@@ -196,7 +197,7 @@ InputArea {
 StatusBar {
     dock: bottom;
     height: 1;
-    background: #18181b;
+    background: #141416;
     color: #71717a;
     padding: 0 1;
     layout: horizontal;

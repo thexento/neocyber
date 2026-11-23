@@ -11,10 +11,12 @@ from textual import on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal
+from textual import events
 from textual.screen import ModalScreen
 from textual.widgets import Button, Static
 
 from neocyber.components.chat import ChatArea
+from neocyber.components.activity import ActivityCard, ActivityGroup
 from neocyber.components.command_palette import CommandPalette
 from neocyber.components.findings_view import FindingsOverlay
 from neocyber.components.help_overlay import HelpOverlay
@@ -25,6 +27,7 @@ from neocyber.engine.agent import AgentRunner
 from neocyber.engine.ollama import OllamaClient
 from neocyber.engine.tools import SecurityValidator
 from neocyber.models.message import Message, Role, ToolCall
+from neocyber.models.activity import ActivityEvent, SessionStore, TaskState
 from neocyber.models.profile import ModelProfile, load_profiles
 
 
@@ -111,8 +114,11 @@ class NeoCyberApp(App[None]):
         Binding("ctrl+m", "open_model_selector", "Models", show=True),
         Binding("f2", "open_model_selector", "Models", show=False),
         Binding("ctrl+y", "copy_last_response", "Copy Response", show=True),
+        Binding("ctrl+shift+c", "copy_last_exchange", "Copy Exchange", show=True),
         Binding("pageup", "scroll_chat_pageup", "Scroll Up", show=False),
         Binding("pagedown", "scroll_chat_pagedown", "Scroll Down", show=False),
+        Binding("shift+up", "scroll_chat_up", "Scroll Up", show=False),
+        Binding("shift+down", "scroll_chat_down", "Scroll Down", show=False),
         Binding("escape", "cancel_action", "Cancel / Stop", show=True),
         Binding("ctrl+c", "quit_app", "Quit", show=True),
         Binding("question_mark", "open_help", "Help", show=False),
@@ -136,6 +142,12 @@ class NeoCyberApp(App[None]):
         self.ollama = OllamaClient()
         self.agent_runner = AgentRunner(self.workspace_dir, self.ollama)
         self.history: List[Message] = []
+        self.activity_events: List[ActivityEvent] = []
+        self.task_state: Optional[TaskState] = None
+        self.session_id = "default"
+        self.session_store = SessionStore(self.workspace_dir)
+        self._activity_cards: Dict[str, ActivityCard] = {}
+        self._activity_groups: Dict[str, ActivityGroup] = {}
         self._is_busy = False
 
     def compose(self) -> ComposeResult:
@@ -171,6 +183,53 @@ class NeoCyberApp(App[None]):
 
     def on_mount(self) -> None:
         self.query_one(InputArea).focus_input()
+        self._restore_session()
+
+    def on_unmount(self) -> None:
+        """Never leave a model/tool worker alive when the TUI closes."""
+        self.agent_runner.cancel()
+        self._is_busy = False
+
+    def _restore_session(self) -> None:
+        """Restore inspectable history without replaying commands or model calls."""
+        data = self.session_store.load()
+        if not data:
+            return
+        self.session_id = data.get("session_id", self.session_id)
+        self.active_profile_name = data.get("model", self.active_profile_name)
+        self.agent_mode = data.get("agent", self.agent_mode)
+        self.query_one(StatusBar).model_name = self.active_profile_name
+        self.query_one(StatusBar).agent_mode = self.agent_mode
+        for raw in data.get("messages", []):
+            try:
+                msg = Message(role=Role(raw["role"]), content=raw["content"], agent=raw.get("agent", "cyber"))
+                self.history.append(msg)
+                if msg.role == Role.USER:
+                    self.query_one(ChatArea).add_user_message(msg.content)
+                elif msg.role == Role.ASSISTANT:
+                    self.query_one(ChatArea).start_assistant_message(msg.agent).update_content(msg.content)
+            except (KeyError, ValueError):
+                continue
+        for raw in data.get("events", []):
+            try:
+                event = ActivityEvent.from_dict(raw)
+                self.activity_events.append(event)
+                self._render_activity(event)
+            except TypeError:
+                continue
+
+    def _persist_session(self) -> None:
+        messages = [{"role": m.role.value, "content": m.content, "agent": m.agent} for m in self.history]
+        self.session_store.save(self.session_id, messages, self.activity_events, self.task_state, self.active_profile_name, self.agent_mode)
+
+    def _render_activity(self, event: ActivityEvent) -> None:
+        group = self._activity_groups.get(event.task_id)
+        if not group:
+            group = ActivityGroup(event.task_id, id=f"activity-group-{event.task_id[:10]}")
+            self._activity_groups[event.task_id] = group
+            self.query_one(ChatArea).mount(group)
+        group.upsert(event)
+        self.query_one(ChatArea).scroll_end(animate=False)
 
     # ── Actions ───────────────────────────────────────────────────────────────
 
@@ -179,6 +238,18 @@ class NeoCyberApp(App[None]):
 
     def action_scroll_chat_pagedown(self) -> None:
         self.query_one(ChatArea).scroll_page_down(animate=False)
+
+    def action_scroll_chat_up(self) -> None:
+        self.query_one(ChatArea).scroll_relative(y=-8, animate=False)
+
+    def action_scroll_chat_down(self) -> None:
+        self.query_one(ChatArea).scroll_relative(y=8, animate=False)
+
+    def action_scroll_chat_home(self) -> None:
+        self.query_one(ChatArea).scroll_home(animate=False)
+
+    def action_scroll_chat_end(self) -> None:
+        self.query_one(ChatArea).scroll_end(animate=False)
 
     def action_open_command_palette(self) -> None:
         def _handle_choice(choice: str | None) -> None:
@@ -202,26 +273,67 @@ class NeoCyberApp(App[None]):
             _on_model_selected,
         )
 
+    def _copy_to_clipboard(self, text: str) -> bool:
+        """Try system clipboard tools; return True on success."""
+        for cmd in [["wl-copy"], ["xclip", "-selection", "clipboard"], ["xsel", "--clipboard", "--input"]]:
+            try:
+                p = subprocess.Popen(cmd, stdin=subprocess.PIPE)
+                p.communicate(text.encode("utf-8"))
+                if p.returncode == 0:
+                    return True
+            except Exception:
+                continue
+        return False
+
     def action_copy_last_response(self) -> None:
         """Copies the text of the latest assistant message to system clipboard."""
         for m in reversed(self.history):
             if m.role == Role.ASSISTANT and m.content:
-                copied = False
-                for cmd in [["wl-copy"], ["xclip", "-selection", "clipboard"], ["xsel", "--clipboard", "--input"]]:
-                    try:
-                        p = subprocess.Popen(cmd, stdin=subprocess.PIPE)
-                        p.communicate(m.content.encode("utf-8"))
-                        if p.returncode == 0:
-                            copied = True
-                            break
-                    except Exception:
-                        continue
-                if copied:
+                if self._copy_to_clipboard(m.content):
                     self.notify("Copied last response to clipboard!")
                 else:
                     self.notify("Hold Shift to select and copy text with mouse", title="Tip")
                 return
         self.notify("No response to copy", severity="warning")
+
+    def action_copy_last_exchange(self) -> None:
+        """Ctrl+Shift+C — copies the last user prompt AND AI response together."""
+        last_user: Optional[str] = None
+        last_ai: Optional[str] = None
+        for m in reversed(self.history):
+            if last_ai is None and m.role == Role.ASSISTANT and m.content:
+                last_ai = m.content
+            elif last_user is None and m.role == Role.USER and m.content:
+                last_user = m.content
+            if last_user is not None and last_ai is not None:
+                break
+        if last_ai is None:
+            self.notify("No conversation to copy", severity="warning")
+            return
+        parts = []
+        if last_user:
+            parts.append(f"You:\n{last_user}")
+        parts.append(f"NeoCyber:\n{last_ai}")
+        combined = "\n\n".join(parts)
+        if self._copy_to_clipboard(combined):
+            self.notify("Copied last exchange to clipboard! (Ctrl+Shift+C)")
+        else:
+            self.notify("Clipboard tool not found. Install wl-copy or xclip.", title="Copy failed")
+
+    def action_copy_all_chat(self) -> None:
+        """Copy the full conversation history to clipboard."""
+        if not self.history:
+            self.notify("No conversation to copy", severity="warning")
+            return
+        lines = []
+        for m in self.history:
+            prefix = "You" if m.role == Role.USER else f"NeoCyber ({m.agent})"
+            lines.append(f"{prefix}:\n{m.content}")
+        combined = "\n\n".join(lines)
+        if self._copy_to_clipboard(combined):
+            self.notify(f"Copied full chat ({len(self.history)} messages) to clipboard!")
+        else:
+            self.notify("Clipboard tool not found. Install wl-copy or xclip.", title="Copy failed")
 
     def action_toggle_agent(self) -> None:
         new_mode = "plan" if self.agent_mode == "cyber" else "cyber"
@@ -251,9 +363,13 @@ class NeoCyberApp(App[None]):
         elif event.direction == "pagedown":
             chat.scroll_page_down(animate=False)
         elif event.direction == "up":
-            chat.scroll_up(animate=False)
+            chat.scroll_relative(y=-8, animate=False)
         elif event.direction == "down":
-            chat.scroll_down(animate=False)
+            chat.scroll_relative(y=8, animate=False)
+        elif event.direction == "home":
+            chat.scroll_home(animate=False)
+        elif event.direction == "end":
+            chat.scroll_end(animate=False)
 
     @on(InputArea.TabPressed)
     def handle_tab_pressed(self) -> None:
@@ -293,7 +409,7 @@ class NeoCyberApp(App[None]):
             self.agent_mode = "plan"
             self.query_one(StatusBar).agent_mode = "plan"
             self.notify("Switched to Plan Mode (Read-Only Threat Modeler)")
-        elif base in ("/models", "/model", "models", "model", "/settings", "settings"):
+        elif base in ("/models", "/model", "models", "model", "/settings", "settings", "switch_model", "switch-model"):
             if arg:
                 self.active_profile_name = arg
                 self.query_one(StatusBar).model_name = arg
@@ -357,93 +473,71 @@ class NeoCyberApp(App[None]):
             ),
         )
 
-        current_prompt = prompt
-        accumulated_history = list(self.history)
-        max_agent_loops = 5
-        loop_count = 0
+        current_assistant_msg: Optional[MessageView] = None
+        accumulated_text = [""]
+        active_card: Optional[ToolExecutionCard] = None
+
+        def _token(token: str) -> None:
+            nonlocal current_assistant_msg
+            if current_assistant_msg is None:
+                current_assistant_msg = chat.start_assistant_message(agent=self.agent_mode)
+                status_bar.status_text = "STREAMING"
+            accumulated_text[0] += token
+            current_assistant_msg.update_content(accumulated_text[0])
+            chat.scroll_end(animate=False)
+
+        def _on_tool_start(tool_id: str, cmd: str) -> None:
+            nonlocal active_card
+            status_bar.status_text = "EXECUTING"
+            active_card = chat.add_tool_card(tool_id, "bash", cmd)
+
+        def _on_tool_chunk(tool_id: str, chunk: str) -> None:
+            nonlocal active_card
+            if active_card is not None:
+                active_card.append_chunk(chunk)
+                chat.scroll_end(animate=False)
+
+        def _on_tool_complete(tool_id: str, code: int, out: str, dur: float) -> None:
+            nonlocal active_card
+            status_bar.status_text = "ANALYZING"
+            if active_card is not None:
+                active_card.set_completed(code, out, dur)
+                active_card = None
+                chat.scroll_end(animate=False)
+
+        def _on_step_switch() -> None:
+            nonlocal current_assistant_msg
+            current_assistant_msg = None
+            accumulated_text[0] = ""
 
         try:
-            while loop_count < max_agent_loops and self._is_busy:
-                loop_count += 1
-                status_bar.status_text = "THINKING" if loop_count == 1 else "ANALYZING"
-
-                # Mount assistant message block for this turn
-                assistant_view = chat.start_assistant_message(agent=self.agent_mode)
-                streamed_tokens = [""]
-
-                def _on_token(token: str) -> None:
-                    streamed_tokens[0] += token
-                    assistant_view.update_content(streamed_tokens[0])
-                    status_bar.status_text = "STREAMING"
-
-                full_resp, _ = await self.agent_runner.execute_turn(
-                    agent_name=self.agent_mode,
-                    profile=profile,
-                    history=accumulated_history,
-                    user_prompt=current_prompt,
-                    on_token=_on_token,
-                    on_tool_start=None,
-                    on_tool_chunk=None,
-                    on_tool_complete=None,
-                )
-
-                # Record turn to accumulated context
-                accumulated_history.append(Message(role=Role.USER, content=current_prompt))
-                accumulated_history.append(Message(role=Role.ASSISTANT, content=full_resp, agent=self.agent_mode))
-
-                # Check if cyber operator proposed commands
-                commands = self.agent_runner.extract_commands(full_resp) if self.agent_mode == "cyber" else []
-                if not commands or not self._is_busy:
-                    # No commands or completed -> agent finished task!
-                    break
-
-                # Execute proposed commands
-                tool_results = []
-                for idx, cmd in enumerate(commands):
-                    if not self._is_busy:
-                        break
-
-                    # Only ask permission if command is sensitive (sudo / destructive)
-                    is_sensitive = SecurityValidator.is_sensitive_command(cmd)
-                    approved = True
-                    if is_sensitive:
-                        status_bar.status_text = "CONFIRMATION"
-                        approved = await self.push_screen_wait(ConfirmCommandModal(cmd))
-
-                    tool_uid = f"tool-{loop_count}-{idx+1}"
-                    if approved:
-                        status_bar.status_text = f"RUNNING: {cmd.split()[0]}"
-                        card = chat.add_tool_card(tool_uid, "bash", cmd)
-
-                        def _chunk_cb(chunk: str):
-                            card.append_chunk(chunk)
-
-                        code, output, duration = await asyncio.to_thread(
-                            self.agent_runner.tools.execute_shell, cmd, _chunk_cb
-                        )
-                        card.set_completed(code, output, duration)
-                        tool_results.append(f"Command '{cmd}' exit code {code}:\n{output}")
-                    else:
-                        card = chat.add_tool_card(tool_uid, "bash", cmd)
-                        card.set_completed(1, "(Skipped by user)", 0.0)
-                        tool_results.append(f"Command '{cmd}' was skipped by the user.")
-
-                # Feed command results back into the agentic loop for next iteration
-                if tool_results:
-                    combined_results = "\n\n".join(tool_results)
-                    current_prompt = (
-                        f"[System: Command Output from your execution]:\n{combined_results}\n\n"
-                        "Analyze these real output results. If additional commands are needed to complete the user's objective, output the next bash command. "
-                        "Otherwise, explain the findings and provide the final answer."
-                    )
-                else:
-                    break
-
-            # Update master conversation history
-            self.history = accumulated_history[-12:]
+            final, events, task = await self.agent_runner.run_task(
+                self.agent_mode,
+                profile,
+                self.history,
+                prompt,
+                emit=lambda ev: None,
+                on_token=_token,
+                on_tool_start=_on_tool_start,
+                on_tool_chunk=_on_tool_chunk,
+                on_tool_complete=_on_tool_complete,
+                on_step_switch=_on_step_switch,
+            )
+            self.task_state = task
+            if current_assistant_msg is not None:
+                current_assistant_msg.update_content(final)
+            else:
+                chat.start_assistant_message(agent=self.agent_mode).update_content(final)
+            chat.scroll_end(animate=False)
+            self.history.extend([Message(Role.USER, prompt), Message(Role.ASSISTANT, final, agent=self.agent_mode)])
+            self.history = self.history[-24:]
+            self._persist_session()
 
         except Exception as e:
-            chat.start_assistant_message(agent=self.agent_mode).update_content(f"Error: {e}")
+            if current_assistant_msg is not None:
+                current_assistant_msg.update_content(f"Error: {e}")
+            else:
+                chat.start_assistant_message(agent=self.agent_mode).update_content(f"Error: {e}")
         finally:
             self._is_busy = False
             status_bar.status_text = "READY"

@@ -12,31 +12,34 @@ from textual.widgets import Static
 HELP_TEXT = """
 ── KEYBOARD SHORTCUTS ──────────────────────────────────────────
 
-  Ctrl+P          Open Command Palette
+  Ctrl+P          Command Palette & Settings (type 'switch model', 'cyber', etc.)
+  Ctrl+M / F2     Switch AI Model Profile directly
   Tab             Toggle Agent Mode (CYBER operator ⟷ PLAN threat modeler)
-  Ctrl+X then M   Select / Switch Model Profile
-  Ctrl+C          Exit NeoCyber (or Cancel prompt)
   Escape          Cancel ongoing model stream or tool execution
   Enter           Submit prompt (Shift+Enter for multi-line)
   Up / Down       Navigate prompt history
+  PageUp/PageDn   Scroll conversation transcript
+  Shift+Up/Down   Scroll conversation transcript
+  Ctrl+Shift+C    Native terminal copy (highlight any text across screen)
+  Right-click     Native terminal context menu (Copy / Paste)
 
 ── INPUT COMMANDS & TRIGGERS ───────────────────────────────────
 
-  ! <command>     Directly run shell command without model reasoning
-                  Example: !uname -a   or   !nmap -sT 127.0.0.1
-  /cyber          Switch to full cyber operator
-  /plan           Switch to read-only threat modeler
-  /models         Open model picker
+  ! <command>     Direct shell passthrough (e.g. !uname -a, !curl -I localhost)
+  /models         Open model picker dialog
+  /cyber          Switch to full cybersecurity operator mode
+  /plan           Switch to architecture & threat modeler mode
   /findings       Open security findings dashboard
   /clear          Clear conversation transcript
-  /help           Show this help modal
+  /help           Show this reference overlay
+  /quit           Exit NeoCyber session
 
-── ARCHITECTURE & FEATURES ─────────────────────────────────────
+── FEATURES & DESIGN ───────────────────────────────────────────
 
-  • Real-time token streaming with local Ollama models (Qwen2.5-Coder, etc.)
-  • Scope guardrails: prevents destructive operations
-  • Evidence persistence: large command outputs saved to reports/evidence/
-  • Native unified diffs on file edits
+  • Host-aware agent: automatically knows your distro, kernel, and package manager
+  • Native terminal mouse: full text highlighting across user & AI messages
+  • Two-phase synthesis: tool executions are grounded and analyzed without looping
+  • Local Ollama: zero telemetry, fast private streaming
 """
 
 
@@ -49,11 +52,11 @@ class HelpOverlay(ModalScreen[None]):
         background: rgba(0, 0, 0, 0.7);
     }
     #help-container {
-        width: 72;
-        max-width: 90%;
+        width: 74;
+        max-width: 92%;
         height: auto;
         max-height: 26;
-        background: #18181b;
+        background: #141416;
         border: round #22d3ee;
         padding: 1 2;
     }

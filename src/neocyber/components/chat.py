@@ -18,20 +18,25 @@ from neocyber.models.message import Role
 class ChatArea(VerticalScroll):
     """Scrollable conversation container maintaining message history and tool cards."""
 
+    can_focus = True
+
     DEFAULT_CSS = """
     ChatArea {
         height: 1fr;
-        background: #141416;
+        background: #0d0d0f;
         padding: 0 1;
         scrollbar-size-vertical: 1;
-        scrollbar-color: #27272a #141416;
+        scrollbar-color: #27272a #0d0d0f;
+    }
+    ChatArea:focus {
+        border: none;
     }
     .welcome-banner {
         width: 100%;
         margin: 0 0 1 0;
         padding: 0 1;
-        background: #18181b;
-        border: round #27272a;
+        background: #141416;
+        border: none;
     }
     """
 
@@ -44,18 +49,16 @@ class ChatArea(VerticalScroll):
     def compose(self) -> ComposeResult:
         welcome_text = Text.assemble(
             ("NEOCYBER", "bold #22d3ee"),
-            (f"  {self.workspace_name}\n", "dim #71717a"),
-            ("Modes: ", "dim #71717a"),
-            ("cyber", "bold #38bdf8"),
-            (" · ", "dim #52525b"),
-            ("plan", "bold #f59e0b"),
-            ("  |  ", "dim #52525b"),
-            ("Ctrl+P", "bold #22d3ee"),
+            (f"  {self.workspace_name}  ", "dim #71717a"),
+            ("·  ", "dim #3f3f46"),
+            ("Ctrl+P", "bold #38bdf8"),
             (" commands  ", "dim #71717a"),
+            ("Ctrl+M", "bold #38bdf8"),
+            (" switch model  ", "dim #71717a"),
             ("Tab", "bold #f59e0b"),
-            (" switch mode  ", "dim #71717a"),
-            ("!", "bold #38bdf8"),
-            (" shell prefix", "dim #71717a"),
+            (" agent mode  ", "dim #71717a"),
+            ("!", "bold #22d3ee"),
+            (" direct shell", "dim #71717a"),
         )
         yield Static(welcome_text, classes="welcome-banner", id="welcome-msg")
 

@@ -8,7 +8,7 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical
 from textual.screen import ModalScreen
-from textual.widgets import OptionList, Static
+from textual.widgets import Input, OptionList, Static
 from textual.widgets.option_list import Option
 
 from neocyber.models.profile import ModelProfile
@@ -66,42 +66,56 @@ class ModelSelector(ModalScreen[str | None]):
     def compose(self) -> ComposeResult:
         with Vertical(id="selector-container"):
             yield Static("❯ SETTINGS: SELECT LOCAL MODEL", id="selector-title")
+            yield Input(placeholder="Search local models…", id="selector-search")
             yield OptionList(id="selector-list")
             yield Static("Enter: Select Model · Up/Down: Navigate · Esc: Cancel", id="selector-hint")
 
     def on_mount(self) -> None:
+        self._populate()
+        self.query_one("#selector-search", Input).focus()
+
+    def _all_models(self):
+        """Profiles are capability metadata; discovered models remain selectable."""
+        models = []
+        configured_names = {p.ollama_name for p in self.profiles.values()}
+        for name, profile in self.profiles.items():
+            models.append((name, profile.param_size, f"ctx: {profile.context_budget}t · Ollama", name == self.active_profile))
+        for local in self.local_models:
+            name = local.get("name", "")
+            if name and name not in configured_names and name not in self.profiles:
+                models.append((name, local.get("size", "?"), "Ollama · capabilities unknown", name == self.active_profile))
+        return models
+
+    def _populate(self, query: str = "") -> None:
         opt_list = self.query_one("#selector-list", OptionList)
         opt_list.clear_options()
-
         active_idx = 0
         idx = 0
-        for name, p in self.profiles.items():
-            is_active = (name == self.active_profile)
+        for name, size, details, is_active in self._all_models():
+            if query and query.lower() not in f"{name} {size} {details}".lower():
+                continue
             if is_active:
                 active_idx = idx
             badge = "  [ACTIVE]" if is_active else ""
             label = Text.assemble(
                 (f"{name:<20}", "bold #38bdf8" if is_active else "bold #f4f4f5"),
-                (f" ({p.param_size})", "dim #a1a1aa"),
-                (f"  ctx: {p.context_budget}t", "dim #71717a"),
+                (f" ({size})", "dim #a1a1aa"),
+                (f"  {details}", "dim #71717a"),
                 (badge, "bold #10b981" if is_active else ""),
             )
             opt_list.add_option(Option(prompt=label, id=name))
             idx += 1
+        if idx:
+            opt_list.highlighted = active_idx
 
-        # Add detected unconfigured Ollama models if any
-        configured_names = {p.ollama_name for p in self.profiles.values()}
-        for lm in self.local_models:
-            mname = lm.get("name", "")
-            if mname and mname not in configured_names and mname not in self.profiles:
-                label = Text.assemble(
-                    (f"{mname:<20}", "#a1a1aa"),
-                    (f" (Ollama: {lm.get('size', '?')})", "dim #71717a"),
-                )
-                opt_list.add_option(Option(prompt=label, id=mname))
+    def on_input_changed(self, event: Input.Changed) -> None:
+        self._populate(event.value.strip())
 
-        opt_list.highlighted = active_idx
-        opt_list.focus()
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        options = self.query_one("#selector-list", OptionList)
+        if options.highlighted is not None:
+            option = options.get_option_at_index(options.highlighted)
+            self.dismiss(str(option.id))
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         self.dismiss(str(event.option_id))

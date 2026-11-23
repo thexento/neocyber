@@ -59,11 +59,13 @@ class StatusBar(Widget):
             Text.assemble(
                 ("^P", "bold #22d3ee"),
                 (" commands  ", "dim #71717a"),
+                ("^M", "bold #38bdf8"),
+                (" switch model  ", "dim #71717a"),
                 ("Tab", "bold #f59e0b"),
-                (" switch agent  ", "dim #71717a"),
+                (" agent  ", "dim #71717a"),
                 ("Esc", "bold #ef4444"),
                 (" stop  ", "dim #71717a"),
-                ("? /help", "dim #a1a1aa"),
+                ("? help", "dim #71717a"),
             ),
             classes="status-right",
         )
