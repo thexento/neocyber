@@ -6,39 +6,39 @@
       "ollama_name": "hf.co/bartowski/Qwen2.5-Coder-7B-Instruct-abliterated-GGUF:Q4_K_M",
       "param_size": "7B",
       "context_budget": 16384,
-      "max_output_tokens": 4096,
+      "max_output_tokens": 8192,
       "native_tools": true,
       "structured_output": true,
-      "temperature": 0.2,
-      "timeout_sec": 60,
+      "temperature": 0.05,
+      "timeout_sec": 120,
       "max_retries": 3,
-      "summarize_threshold_lines": 35
+      "summarize_threshold_lines": 50
     },
     "llama3.2:3b": {
       "model_id": "llama3.2:3b",
       "ollama_name": "llama3.2:3b",
       "param_size": "3B",
-      "context_budget": 8192,
-      "max_output_tokens": 2048,
+      "context_budget": 16384,
+      "max_output_tokens": 4096,
       "native_tools": false,
       "structured_output": true,
-      "temperature": 0.1,
-      "timeout_sec": 45,
+      "temperature": 0.05,
+      "timeout_sec": 60,
       "max_retries": 3,
-      "summarize_threshold_lines": 25
+      "summarize_threshold_lines": 35
     },
     "gemma2:2b": {
       "model_id": "gemma2:2b",
       "ollama_name": "gemma2:2b",
       "param_size": "2B",
-      "context_budget": 8192,
-      "max_output_tokens": 1500,
+      "context_budget": 16384,
+      "max_output_tokens": 3000,
       "native_tools": false,
       "structured_output": true,
-      "temperature": 0.2,
-      "timeout_sec": 30,
+      "temperature": 0.05,
+      "timeout_sec": 60,
       "max_retries": 3,
-      "summarize_threshold_lines": 20
+      "summarize_threshold_lines": 30
     }
   }
 }
