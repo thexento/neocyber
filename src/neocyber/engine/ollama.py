@@ -11,8 +11,9 @@ from typing import AsyncGenerator, Dict, List, Optional
 class OllamaClient:
     """Communicates with local Ollama server."""
 
-    def __init__(self, host: Optional[str] = None) -> None:
+    def __init__(self, host: Optional[str] = None, request_timeout: float = 3.0) -> None:
         self.host = (host or os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434")).rstrip("/")
+        self.request_timeout = request_timeout
 
     def is_available(self) -> bool:
         try:
@@ -64,7 +65,8 @@ class OllamaClient:
 
         def _fetch_stream():
             try:
-                return urllib.request.urlopen(req, timeout=120)
+                # A local provider that is unavailable must not freeze the TUI or test teardown.
+                return urllib.request.urlopen(req, timeout=self.request_timeout)
             except urllib.error.URLError as e:
                 raise RuntimeError(f"Failed to connect to Ollama ({self.host}): {e}")
 
