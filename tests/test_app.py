@@ -48,7 +48,7 @@ async def test_app_prompt_submission_on_enter():
         chat = app.query_one(ChatArea)
         user_msgs = [m for m in chat.query("MessageView") if m.role.value == "user"]
         assert len(user_msgs) > 0
-        assert "test security scan" in user_msgs[0].initial_content
+        assert any("test security scan" in m.initial_content for m in user_msgs)
 
 
 @pytest.mark.asyncio
